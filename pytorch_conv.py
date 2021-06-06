@@ -13,9 +13,9 @@ import numpy as np
 class Filter(nn.Module):
     def __init__(self):
         super(Filter, self).__init__()
-        self.conv1 = nn.Conv2d(1,1, 5)  
+        self.conv1 = nn.Conv2d(1,1, 3)  
     def setKernel(self,K):
-        self.conv1 = None
+        #self.conv1 = None
         #(in_channels, out_channels, kernel_size)
         K = torch.from_numpy(K).float() 
         #move from numpy to torch
