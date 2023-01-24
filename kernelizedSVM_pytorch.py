@@ -185,7 +185,7 @@ if __name__=='__main__':
     model = KernelSVM(x,kernel='rbf',degree = 4, gamma = 1)
     model=cuda(model)
     C = 100 #C Hyperparameter in SVM formulation
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01) #optimizer stochastic gradient descent (however because we are not picking examples randomly this is gradient descent)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01) #optimizer stochastic gradient descent (however because we are not picking examples randomly this is gradient descent)
     History = [] #Just for plotting the convergence
     for i in range(10000):        #1000 iterations should be good enough
         
