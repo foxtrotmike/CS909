@@ -38,7 +38,7 @@ def gd(f,df,v0=0.0,lr = 0.01,eps=1e-4,nmax=1000, history = True):
     converged = np.linalg.norm(dv)<eps        
     return v,converged,(np.array(Hv),np.array(Hf))
 
-def plotGD(H,c,idx=0):    
+def plotGD(H,c):    
     """
     Plot the optimization steps of the gradient descent algorithm.
 
@@ -46,24 +46,20 @@ def plotGD(H,c,idx=0):
     H (tuple of numpy.ndarray): History of iterations as returned by the gd function.
                                 It contains variable values and function values at each step.
     c (bool): Convergence status as returned by the gd function.
-    idx (int): Index of the variable to plot, applicable for multi-dimensional cases. Default is 0.
+    
 
-    This function generates a plot of the optimization steps. The start and end points are marked with different symbols.
+    This function generates a plot of the optimization steps. 
     """
     plt.figure()
     Hv,Hf = H
-    if Hv.ndim > 1:
-        Hv = Hv[:,idx]    
-    plt.xlabel('variable');plt.ylabel('value')
-    s = 'Convergence in '+str(len(Hf))+' steps'
-    if not c:
-        s = 'No '+s
-    plt.title(s)
-    plt.plot(Hv[0],Hf[0],'ko',markersize=10)
-    plt.plot(Hv,Hf,'r.-')
-    plt.plot(Hv[-1],Hf[-1],'k*',markersize=10)    
-    plt.grid(); plt.show()
-    
+    if Hv.ndim == 1:
+        Hv = np.atleast_2d(Hv).T
+        
+    plt.plot(Hf);plt.plot(Hv)
+    plt.xlabel('iterations');plt.legend(['Objective function']+['$V_'+str(i)+'$' for i in range(Hv.shape[1])])
+    str_title = 'Convergence in '+str(len(Hf))+' iterations.'
+    if not c: str_title = 'No '+str_title
+    plt.title(str_title)
 if __name__=='__main__':
     
     #%% Single input variable
@@ -95,11 +91,6 @@ if __name__=='__main__':
     # It visualizes the optimization steps and the convergence of the algorithm.
     plotGD(H, c)
     
-    # Plot the original function f over the range of v.
-    # This helps to visualize the function being optimized.
-    plt.plot(v, [f(vi) for vi in v])
-
-    
     #%% Two variable function
     # Section for handling a two-variable optimization function
     
@@ -107,13 +98,13 @@ if __name__=='__main__':
     # Here, 'f' is a simple quadratic function in two variables.
     def f(v):
         # v is expected to be a vector (or list) of two elements.
-        return np.array(v[0]**2 + v[1]**2)
+        return np.array(v[0]**2 + (v[1]-1)**2)
     
     # Define the gradient 'df' of the objective function 'f'.
     # The gradient function returns a vector of partial derivatives.
     def df(v):
         # Returns the gradient of 'f' as a numpy array.
-        return np.array([2*v[0], 2*v[1]])
+        return np.array([2*v[0], 2*(v[1]-1)])
     
     # Create a range of values for testing or visualization purposes.
     # This is not directly used in the gradient descent for this 2-variable function.
@@ -160,7 +151,7 @@ if __name__=='__main__':
     # The gradient is -y * x if 1 - y * (w @ x) > 0, else 0.
     # Mathematically, dL(y, w @ x)/dw = -y * x if 1 - y * (w @ x) > 0, else 0.
     def dloss(y, x, w): 
-        if (1 - y * (w @ x)) < 0:
+        if (1 - y * (w @ x)) <= 0:
             return np.zeros(x.shape)
         else:
             return -y * x
@@ -179,9 +170,8 @@ if __name__=='__main__':
     v0 = 0.1 * np.random.randn(X.shape[1])
     
     # Apply gradient descent to minimize the loss function and find the optimal weights.
-    vout, c, H = gd(f, df, v0=v0, lr=0.05, eps=1e-4, nmax=10000, history=True)
+    vout, c, H = gd(f, df, v0=v0, lr=0.01, eps=1e-4, nmax=10000, history=True)
     
     # Plot the optimization process for each weight separately.
     # First plot is for the bias term, and the second plot is for the weight associated with the feature.
-    plotGD(H, c, idx=0); plt.title('Bias')
-    plotGD(H, c, idx=1); plt.title('Weight')
+    plotGD(H, c)
