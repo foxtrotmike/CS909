@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Line Equation with Loss Function Selection</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+        .control {
+            margin: 10px 0;
+        }
+        #message {
+            color: red;
+            margin-bottom: 10px;
+        }
+        #footer {
+            margin-top: 20px;
+            font-size: 0.8em;
+            color: gray;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control">
+            <label for="w1">w1: </label>
+            <input type="range" id="w1" min="-10" max="10" step="0.1" value="1">
+            <span id="w1-value">1</span>
+        </div>
+        <div class="control">
+            <label for="w2">w2: </label>
+            <input type="range" id="w2" min="-10" max="10" step="0.1" value="1">
+            <span id="w2-value">1</span>
+        </div>
+        <div class="control">
+            <label for="b">b: </label>
+            <input type="range" id="b" min="-10" max="10" step="0.1" value="0">
+            <span id="b-value">0</span>
+        </div>
+        <div class="control">
+            <label for="loss-function">Loss Function: </label>
+            <select id="loss-function">
+                <option value="max0_neg_yfx" selected>max(0, -y * f(x))</option>
+                <option value="hinge">Hinge Loss (max(0, 1 - y * f(x)))</option>
+                <option value="cross_entropy">Binary Cross-Entropy Loss</option>
+            </select>
+        </div>
+    </div>
+    <div id="message"></div>
+    <div id="plot"></div>
+    <div id="mean-loss">Mean Loss: 0</div>
+    <div id="footer">
+        &copy; Fayyaz Minhas
+    </div>
+
+    <script>
+        // Get elements
+        const w1Slider = document.getElementById('w1');
+        const w2Slider = document.getElementById('w2');
+        const bSlider = document.getElementById('b');
+        const w1Value = document.getElementById('w1-value');
+        const w2Value = document.getElementById('w2-value');
+        const bValue = document.getElementById('b-value');
+        const lossFunctionSelect = document.getElementById('loss-function');
+        const messageDiv = document.getElementById('message');
+        const plotDiv = document.getElementById('plot');
+        const meanLossDiv = document.getElementById('mean-loss');
+
+        // Data points for AND classification problem
+        let dataPoints = [
+            { x: 0, y: 0, class: -1, marker: { color: 'blue', symbol: 'circle', size: 12 } },
+            { x: 0, y: 1, class: -1, marker: { color: 'blue', symbol: 'circle', size: 12 } },
+            { x: 1, y: 0, class: -1, marker: { color: 'blue', symbol: 'circle', size: 12 } },
+            { x: 1, y: 1, class: 1, marker: { color: 'red', symbol: 'square', size: 12 } }
+        ];
+
+        const scatterData = {
+            x: dataPoints.map(point => point.x),
+            y: dataPoints.map(point => point.y),
+            mode: 'markers+text',
+            type: 'scatter',
+            marker: {
+                size: dataPoints.map(point => point.marker.size),
+                color: dataPoints.map(point => point.marker.color),
+                symbol: dataPoints.map(point => point.marker.symbol)
+            },
+            text: [],
+            textposition: 'top right',
+            textfont: {
+                size: 10
+            }
+        };
+
+        // Logistic function
+        function sigmoid(z) {
+            return 1 / (1 + Math.exp(-z));
+        }
+
+        // Function to update the plot
+        function updatePlot() {
+            const w1 = parseFloat(w1Slider.value);
+            const w2 = parseFloat(w2Slider.value);
+            const b = parseFloat(bSlider.value);
+            const lossFunction = lossFunctionSelect.value;
+
+            // Update the display values
+            w1Value.innerText = w1;
+            w2Value.innerText = w2;
+            bValue.innerText = b;
+
+            let message = '';
+
+            if (lossFunction === 'cross_entropy') {
+                message = 'Binary Cross-Entropy Loss selected: Converting labels to binary (0, 1) and applying sigmoid activation.';
+                // Convert class labels to binary (0, 1)
+                dataPoints = dataPoints.map(point => ({
+                    ...point,
+                    class: point.class === 1 ? 1 : 0
+                }));
+            } else {
+                // Ensure class labels are bipolar (-1, 1)
+                dataPoints = dataPoints.map(point => ({
+                    ...point,
+                    class: point.class === 1 ? 1 : -1
+                }));
+            }
+
+            // Display message if any
+            messageDiv.innerText = message;
+
+            // Calculate line points
+            const x1 = -1;
+            const x2 = 2;
+            const y1 = -(w1 * x1 + b) / w2;
+            const y2 = -(w1 * x2 + b) / w2;
+
+            const lineData = {
+                x: [x1, x2],
+                y: [y1, y2],
+                mode: 'lines',
+                type: 'scatter',
+                line: {
+                    color: 'green'
+                }
+            };
+
+            // Determine the position for the arrow
+            const arrowX = (x1 + x2) / 2;
+            const arrowY = (y1 + y2) / 2;
+
+            let totalLoss = 0;
+
+            // Calculate f(x), class labels, and losses for each data point and update scatter text
+            scatterData.text = dataPoints.map(point => {
+                const fx = w1 * point.x + w2 * point.y + b;
+                let p = fx;
+                let loss = 0;
+
+                if (lossFunction === 'max0_neg_yfx') {
+                    loss = Math.max(0, -point.class * fx);
+                } else if (lossFunction === 'hinge') {
+                    loss = Math.max(0, 1 - point.class * fx);
+                } else if (lossFunction === 'cross_entropy') {
+                    p = sigmoid(fx);
+                    loss = -(point.class * Math.log(p) + (1 - point.class) * Math.log(1 - p));
+                }
+
+                totalLoss += loss;
+
+                let fxDescription = `f(x) = ${fx.toFixed(2)}<br>`;
+                fxDescription += `Loss: ${loss.toFixed(2)}<br>`;
+                fxDescription += (fx > 0) === (point.class === 1) ? '✓ Correct' : '✗ Incorrect';
+
+                return fxDescription;
+            });
+
+            const meanLoss = totalLoss / dataPoints.length;
+            meanLossDiv.innerText = `Mean Loss: ${meanLoss.toFixed(2)}`;
+
+            const layout = {
+                title: 'AND Classification Problem',
+                xaxis: { range: [-1, 2] },
+                yaxis: { range: [-1, 2] },
+                annotations: [{
+                    x: arrowX,
+                    y: arrowY,
+                    ax: x2,
+                    ay: y2,
+                    axref: 'x',
+                    ayref: 'y',
+                    text: '',
+                    showarrow: true,
+                    arrowhead: 3,
+                    arrowsize: 1,
+                    arrowwidth: 1,
+                    arrowcolor: 'green'
+                }]
+            };
+
+            Plotly.newPlot(plotDiv, [scatterData, lineData], layout);
+        }
+
+        // Add event listeners
+        w1Slider.addEventListener('input', updatePlot);
+        w2Slider.addEventListener('input', updatePlot);
+        bSlider.addEventListener('input', updatePlot);
+        lossFunctionSelect.addEventListener('change', updatePlot);
+
+        // Initial plot
+        updatePlot();
+    </script>
+</body>
+</html>
