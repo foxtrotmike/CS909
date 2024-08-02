@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>XOR Data Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .plot-container {
+            display: flex;
+            justify-content: space-around;
+        }
+        .plot {
+            margin: 10px;
+        }
+        #plot2d {
+            width: 30%;
+        }
+        #plot3d {
+            width: 70%;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        .control-group {
+            margin: 10px;
+        }
+        label {
+            margin-right: 10px;
+        }
+        input[type=range] {
+            width: 200px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Transformations in Representations Allow Nonlinear Classification</h1>
+    <div class="controls">
+        <div class="control-group">
+            <label for="transform">Transformation:</label>
+            <select id="transform" onchange="updateDefaults()">
+                <option value="transform0">Transform-0</option>
+                <option value="transform1">Transform-1</option>
+                <option value="transform2">Transform-2</option>
+            </select>
+        </div>
+        <div id="transformation-info" style="text-align: center; margin-bottom: 20px;"></div>
+        <div class="control-group">
+            <label for="w1">w1: <span id="w1-value">2</span></label>
+            <input type="range" id="w1" min="-10" max="10" step="0.1" value="2" oninput="updateSliderValue('w1'); updatePlot();">
+        </div>
+        <div class="control-group">
+            <label for="w2">w2: <span id="w2-value">2</span></label>
+            <input type="range" id="w2" min="-10" max="10" step="0.1" value="2" oninput="updateSliderValue('w2'); updatePlot();">
+        </div>
+        <div class="control-group">
+            <label for="w3">w3: <span id="w3-value">-3</span></label>
+            <input type="range" id="w3" min="-10" max="10" step="0.1" value="-3" oninput="updateSliderValue('w3'); updatePlot();">
+        </div>
+        <div class="control-group">
+            <label for="b">b: <span id="b-value">-1</span></label>
+            <input type="range" id="b" min="-10" max="10" step="0.1" value="-1" oninput="updateSliderValue('b'); updatePlot();">
+        </div>
+    </div>
+    <div class="plot-container">
+        <div id="plot2d" class="plot"></div>
+        <div id="plot3d" class="plot"></div>
+    </div>
+    <div class="footer">(c) Fayyaz Minhas</div>
+
+    <script>
+        // Function to update slider values display
+        function updateSliderValue(id) {
+            document.getElementById(id + '-value').innerText = document.getElementById(id).value;
+        }
+
+        // Function to apply ReLU
+        function relu(x) {
+            return Math.max(0, x);
+        }
+
+        // Function to update default values based on selected transformation
+        function updateDefaults() {
+            const transform = document.getElementById('transform').value;
+            const transformationInfo = document.getElementById('transformation-info');
+            if (transform === 'transform0') {
+                document.getElementById('w1').value = 2;
+                document.getElementById('w2').value = 2;
+                document.getElementById('w3').value = -3;
+                document.getElementById('b').value = -1;
+                transformationInfo.innerText = 'Using Transform-0: x1 = (x1)^2, x2 = (x2)^2, x3 = sqrt(2) * x1 * x2';
+            } else if (transform === 'transform1') {
+                document.getElementById('w1').value = 2;
+                document.getElementById('w2').value = 2;
+                document.getElementById('w3').value = -3;
+                document.getElementById('b').value = -1.5;
+                transformationInfo.innerText = 'Using Transform-1: x1 = x1, x2 = x2, x3 = x1 * x2';
+            } else if (transform === 'transform2') {
+                document.getElementById('w1').value = 1;
+                document.getElementById('w2').value = 1;
+                document.getElementById('w3').value = -7;
+                document.getElementById('b').value = -0.5;
+                transformationInfo.innerText = 'Using Transform-2: x1 = relu(x1), x2 = relu(x2), x3 = relu(x1 + x2 - 1.5) with relu(x) = max(0,x)';
+            }
+            updateSliderValue('w1');
+            updateSliderValue('w2');
+            updateSliderValue('w3');
+            updateSliderValue('b');
+            updatePlot();
+        }
+
+        // Original 2D XOR data
+        const data2d = [
+            {x: [0, 0, 1, 1], y: [0, 1, 0, 1], mode: 'markers', type: 'scatter', 
+             marker: {size: 12, color: ['red', 'blue', 'blue', 'red']}, name: 'Original 2D'}
+        ];
+
+        const layout2d = {
+            title: 'Original 2D XOR Data',
+            xaxis: {title: 'x1'},
+            yaxis: {title: 'x2'}
+        };
+
+        Plotly.newPlot('plot2d', data2d, layout2d);
+
+        // Function to update the 3D plot with user-defined weights and bias
+        function updatePlot() {
+            const w1 = parseFloat(document.getElementById('w1').value);
+            const w2 = parseFloat(document.getElementById('w2').value);
+            const w3 = parseFloat(document.getElementById('w3').value);
+            const b = parseFloat(document.getElementById('b').value);
+            const transform = document.getElementById('transform').value;
+
+            // Transformed 3D XOR data
+            let x1, x2, x3;
+            if (transform === 'transform0') {
+                x1 = [0**2, 0**2, 1**2, 1**2];
+                x2 = [0**2, 1**2, 0**2, 1**2];
+                x3 = [Math.sqrt(2) * 0 * 0, Math.sqrt(2) * 0 * 1, Math.sqrt(2) * 1 * 0, Math.sqrt(2) * 1 * 1];
+            } else if (transform === 'transform1') {
+                x1 = [0, 0, 1, 1];
+                x2 = [0, 1, 0, 1];
+                x3 = [0, 0, 0, 1];
+            } else if (transform === 'transform2') {
+                x1 = [relu(0), relu(0), relu(1), relu(1)];
+                x2 = [relu(0), relu(1), relu(0), relu(1)];
+                x3 = [relu(0 + 0 - 1.5), relu(0 + 1 - 1.5), relu(1 + 0 - 1.5), relu(1 + 1 - 1.5)];
+            }
+
+            const data3d = [{
+                x: x1,
+                y: x2,
+                z: x3,
+                mode: 'markers',
+                type: 'scatter3d',
+                marker: {size: 5, color: ['red', 'blue', 'blue', 'red']},
+                name: 'Transformed 3D'
+            }];
+
+            // Separating plane in 3D
+            const planeX = [0, 1, 0, 1];
+            const planeY = [0, 0, 1, 1];
+            const planeZ = [
+                (b + w1 * planeX[0] + w2 * planeY[0]) / -w3, 
+                (b + w1 * planeX[1] + w2 * planeY[1]) / -w3, 
+                (b + w1 * planeX[2] + w2 * planeY[2]) / -w3, 
+                (b + w1 * planeX[3] + w2 * planeY[3]) / -w3
+            ];
+
+            const plane3d = [{
+                x: planeX,
+                y: planeY,
+                z: planeZ,
+                type: 'mesh3d',
+                opacity: 0.5,
+                color: 'rgba(0, 255, 0, 0.5)',
+                name: 'Separating Plane'
+            }];
+
+            const layout3d = {
+                title: 'Transformed 3D XOR Data with Separating Plane',
+                scene: {
+                    xaxis: {title: 'x1'},
+                    yaxis: {title: 'x2'},
+                    zaxis: {title: 'x3'}
+                }
+            };
+
+            Plotly.newPlot('plot3d', [...data3d, ...plane3d], layout3d);
+        }
+
+        // Initial plot
+        updateDefaults();
+    </script>
+</body>
+</html>
