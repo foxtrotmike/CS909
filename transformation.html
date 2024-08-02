@@ -93,19 +93,19 @@
                 document.getElementById('w2').value = 2;
                 document.getElementById('w3').value = -3;
                 document.getElementById('b').value = -1;
-                transformationInfo.innerText = 'Using Transform-0: x1 = (x1)^2, x2 = (x2)^2, x3 = sqrt(2) * x1 * x2';
+                transformationInfo.innerText = 'Using Transform-0: x1\' = (x1)^2\', x2 = (x2)^2, x3\' = sqrt(2) * x1 * x2';
             } else if (transform === 'transform1') {
                 document.getElementById('w1').value = 2;
                 document.getElementById('w2').value = 2;
                 document.getElementById('w3').value = -3;
                 document.getElementById('b').value = -1.5;
-                transformationInfo.innerText = 'Using Transform-1: x1 = x1, x2 = x2, x3 = x1 * x2';
+                transformationInfo.innerText = 'Using Transform-1: x1\' = x1, x2\' = x2, x3\' = x1 * x2';
             } else if (transform === 'transform2') {
                 document.getElementById('w1').value = 1;
                 document.getElementById('w2').value = 1;
                 document.getElementById('w3').value = -7;
                 document.getElementById('b').value = -0.5;
-                transformationInfo.innerText = 'Using Transform-2: x1 = relu(x1), x2 = relu(x2), x3 = relu(x1 + x2 - 1.5) with relu(x) = max(0,x)';
+                transformationInfo.innerText = 'Using Transform-2: x1\' = relu(x1), x2\' = relu(x2), x3\' = relu(x1 + x2 - 1.5) with relu(x) = max(0,x)';
             }
             updateSliderValue('w1');
             updateSliderValue('w2');
