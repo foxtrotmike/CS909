@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Line Equation</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+        .control {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control">
+            <label for="w1">w1: </label>
+            <input type="range" id="w1" min="-10" max="10" step="0.1" value="1">
+            <span id="w1-value">1</span>
+        </div>
+        <div class="control">
+            <label for="w2">w2: </label>
+            <input type="range" id="w2" min="-10" max="10" step="0.1" value="1">
+            <span id="w2-value">1</span>
+        </div>
+        <div class="control">
+            <label for="b">b: </label>
+            <input type="range" id="b" min="-10" max="10" step="0.1" value="0">
+            <span id="b-value">0</span>
+        </div>
+    </div>
+    <div id="plot"></div>
+
+    <script>
+        // Get elements
+        const w1Slider = document.getElementById('w1');
+        const w2Slider = document.getElementById('w2');
+        const bSlider = document.getElementById('b');
+        const w1Value = document.getElementById('w1-value');
+        const w2Value = document.getElementById('w2-value');
+        const bValue = document.getElementById('b-value');
+        const plotDiv = document.getElementById('plot');
+
+        // Function to update the plot
+        function updatePlot() {
+            const w1 = parseFloat(w1Slider.value);
+            const w2 = parseFloat(w2Slider.value);
+            const b = parseFloat(bSlider.value);
+
+            // Update the display values
+            w1Value.innerText = w1;
+            w2Value.innerText = w2;
+            bValue.innerText = b;
+
+            // Calculate points
+            const x1 = -10;
+            const x2 = 10;
+            const y1 = -(w1 * x1 + b) / w2;
+            const y2 = -(w1 * x2 + b) / w2;
+
+            // Plot the line
+            const trace = {
+                x: [x1, x2],
+                y: [y1, y2],
+                mode: 'lines',
+                type: 'scatter'
+            };
+
+            const layout = {
+                title: 'Line Equation: w1*x1 + w2*x2 + b = 0',
+                xaxis: { range: [-10, 10] },
+                yaxis: { range: [-10, 10] }
+            };
+
+            Plotly.newPlot(plotDiv, [trace], layout);
+        }
+
+        // Add event listeners
+        w1Slider.addEventListener('input', updatePlot);
+        w2Slider.addEventListener('input', updatePlot);
+        bSlider.addEventListener('input', updatePlot);
+
+        // Initial plot
+        updatePlot();
+    </script>
+</body>
+</html>
