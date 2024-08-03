@@ -27,8 +27,10 @@
         <span id="angleBValue">90</span>
     </div>
     <div>
-        <p>Dot Product: <span id="dotProduct"></span></p>
         <p>Distance: <span id="distance"></span></p>
+        <p>Dot Product: <span id="dotProduct"></span></p>
+        <p>Polynomial Kernel: <span id="polyKernel"></span></p>
+        <p>RBF Kernel: <span id="rbfKernel"></span></p>
     </div>
     <canvas id="vectorCanvas" width="400" height="400" style="border:1px solid black;"></canvas>
     <div class="credit">(c) Fayyaz Minhas</div>
@@ -40,6 +42,8 @@
         const angleBValue = document.getElementById('angleBValue');
         const dotProductElement = document.getElementById('dotProduct');
         const distanceElement = document.getElementById('distance');
+        const polyKernelElement = document.getElementById('polyKernel');
+        const rbfKernelElement = document.getElementById('rbfKernel');
         const canvas = document.getElementById('vectorCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -59,8 +63,13 @@
             const dotProduct = vectorA.x * vectorB.x + vectorA.y * vectorB.y;
             const distance = Math.sqrt((vectorA.x - vectorB.x) ** 2 + (vectorA.y - vectorB.y) ** 2);
 
+            const polyKernel = Math.pow(dotProduct, 2);
+            const rbfKernel = Math.exp(-Math.pow(distance, 2));
+
             dotProductElement.textContent = dotProduct.toFixed(2);
             distanceElement.textContent = distance.toFixed(2);
+            polyKernelElement.textContent = polyKernel.toFixed(2);
+            rbfKernelElement.textContent = rbfKernel.toFixed(2);
 
             drawVectors(vectorA, vectorB);
         }
