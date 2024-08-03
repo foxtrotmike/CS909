@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dot Product and Distance Relationship</title>
+    <style>
+        .vector {
+            margin: 20px;
+        }
+        .credit {
+            margin-top: 20px;
+            font-size: 14px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="vector">
+        <label for="angleA">Angle of Vector A (degrees): </label>
+        <input type="range" id="angleA" min="0" max="360" value="0">
+        <span id="angleAValue">0</span>
+    </div>
+    <div class="vector">
+        <label for="angleB">Angle of Vector B (degrees): </label>
+        <input type="range" id="angleB" min="0" max="360" value="90">
+        <span id="angleBValue">90</span>
+    </div>
+    <div>
+        <p>Dot Product: <span id="dotProduct"></span></p>
+        <p>Distance: <span id="distance"></span></p>
+    </div>
+    <canvas id="vectorCanvas" width="400" height="400" style="border:1px solid black;"></canvas>
+    <div class="credit">(c) Fayyaz Minhas</div>
+
+    <script>
+        const angleAInput = document.getElementById('angleA');
+        const angleBInput = document.getElementById('angleB');
+        const angleAValue = document.getElementById('angleAValue');
+        const angleBValue = document.getElementById('angleBValue');
+        const dotProductElement = document.getElementById('dotProduct');
+        const distanceElement = document.getElementById('distance');
+        const canvas = document.getElementById('vectorCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function updateVectors() {
+            const angleA = parseInt(angleAInput.value);
+            const angleB = parseInt(angleBInput.value);
+
+            angleAValue.textContent = angleA;
+            angleBValue.textContent = angleB;
+
+            const radA = angleA * (Math.PI / 180);
+            const radB = angleB * (Math.PI / 180);
+
+            const vectorA = { x: Math.cos(radA), y: Math.sin(radA) };
+            const vectorB = { x: Math.cos(radB), y: Math.sin(radB) };
+
+            const dotProduct = vectorA.x * vectorB.x + vectorA.y * vectorB.y;
+            const distance = Math.sqrt((vectorA.x - vectorB.x) ** 2 + (vectorA.y - vectorB.y) ** 2);
+
+            dotProductElement.textContent = dotProduct.toFixed(2);
+            distanceElement.textContent = distance.toFixed(2);
+
+            drawVectors(vectorA, vectorB);
+        }
+
+        function drawVectors(vectorA, vectorB) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw circle
+            ctx.beginPath();
+            ctx.arc(200, 200, 100, 0, 2 * Math.PI);
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+
+            // Draw vector A
+            ctx.beginPath();
+            ctx.moveTo(200, 200);
+            ctx.lineTo(200 + vectorA.x * 100, 200 - vectorA.y * 100);
+            ctx.strokeStyle = 'red';
+            ctx.stroke();
+
+            // Draw point for vector A
+            ctx.beginPath();
+            ctx.arc(200 + vectorA.x * 100, 200 - vectorA.y * 100, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = 'red';
+            ctx.fill();
+
+            // Draw vector B
+            ctx.beginPath();
+            ctx.moveTo(200, 200);
+            ctx.lineTo(200 + vectorB.x * 100, 200 - vectorB.y * 100);
+            ctx.strokeStyle = 'blue';
+            ctx.stroke();
+
+            // Draw point for vector B
+            ctx.beginPath();
+            ctx.arc(200 + vectorB.x * 100, 200 - vectorB.y * 100, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = 'blue';
+            ctx.fill();
+        }
+
+        angleAInput.addEventListener('input', updateVectors);
+        angleBInput.addEventListener('input', updateVectors);
+
+        updateVectors();
+    </script>
+</body>
+</html>
