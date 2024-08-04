@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Function Plot with Gradient Vectors</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div id="plot" style="width: 100%; height: 100vh;"></div>
+    <script>
+        // Define the mathematical function
+        function f(x, y) {
+            return x * x + y * y;
+        }
+
+        // Define the gradient of the function
+        function gradient(x, y) {
+            return {
+                dx: 2 * x,
+                dy: 2 * y
+            };
+        }
+
+        // Generate linearly spaced values for x and y
+        let xValues = [];
+        let yValues = [];
+        let step = 0.1;
+        for (let x = -1; x <= 1; x += step) {
+            xValues.push(x);
+        }
+        for (let y = -1; y <= 1; y += step) {
+            yValues.push(y);
+        }
+
+        // Generate grid data for z = f(x, y)
+        let zValues = [];
+        for (let i = 0; i < xValues.length; i++) {
+            let zRow = [];
+            for (let j = 0; j < yValues.length; j++) {
+                zRow.push(f(xValues[i], yValues[j]));
+            }
+            zValues.push(zRow);
+        }
+
+        // Generate data points for the gradient arrows
+        let arrows = {
+            x: [],
+            y: [],
+            z: [],
+            u: [],
+            v: [],
+            w: []
+        };
+        let arrowStep = 0.2;
+        for (let x = -1; x <= 1; x += arrowStep) {
+            for (let y = -1; y <= 1; y += arrowStep) {
+                let grad = gradient(x, y);
+                arrows.x.push(x);
+                arrows.y.push(y);
+                arrows.z.push(f(x, y));
+                arrows.u.push(grad.dx);
+                arrows.v.push(grad.dy);
+                arrows.w.push(0);
+            }
+        }
+
+        // Create the 3D surface plot
+        let surface = {
+            type: 'surface',
+            x: xValues,
+            y: yValues,
+            z: zValues,
+            colorscale: 'Viridis'
+        };
+
+        // Create the gradient arrows plot
+        let quiver = {
+            type: 'cone',
+            x: arrows.x,
+            y: arrows.y,
+            z: arrows.z.map(() => 0), // Place arrows on the x,y plane (z = 0)
+            u: arrows.u,
+            v: arrows.v,
+            w: arrows.w,
+            sizemode: 'absolute',
+            sizeref: 2.0, // Increase this value to make the arrows larger
+            anchor: 'tail',
+            showscale: false
+        };
+
+        // Plot the data
+        Plotly.newPlot('plot', [surface, quiver], {
+            title: '3D Function Plot with Gradient Vectors',
+            scene: {
+                xaxis: {title: 'X'},
+                yaxis: {title: 'Y'},
+                zaxis: {title: 'Z'}
+            }
+        });
+    </script>
+</body>
+</html>
