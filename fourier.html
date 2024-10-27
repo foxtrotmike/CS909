@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1D Signal Generator and FFT Demo</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+
+    <h2>1D Signal Generator and FFT Demo</h2>
+    <div>
+        <label for="numFrequencies">Number of Frequencies: </label>
+        <input type="number" id="numFrequencies" min="1" max="10" value="3">
+        <button onclick="generateInputFields()">Set Frequencies</button>
+    </div>
+    
+    <div id="frequencyControls"></div>
+    <button onclick="generateSignal()">Generate Signal</button>
+    
+    <div>
+        <label for="magnitudeThreshold">Magnitude Threshold: </label>
+        <input type="number" id="magnitudeThreshold" step="0.0001" value="0.001">
+    </div>
+    
+    <div id="individualSignalsPlot"></div>
+    <div id="signalPlot"></div>
+    <div id="fftMagnitudePlot"></div>
+    <div id="fftPhasePlot"></div>
+
+    <script>
+        // Generate input fields for frequency, amplitude, and phase controls
+        function generateInputFields() {
+            const numFrequencies = parseInt(document.getElementById("numFrequencies").value);
+            const frequencyControls = document.getElementById("frequencyControls");
+            frequencyControls.innerHTML = '';
+
+            for (let i = 1; i <= numFrequencies; i++) {
+                frequencyControls.innerHTML += `
+                    <h4>Frequency ${i}</h4>
+                    <label>Amplitude:</label>
+                    <input type="number" id="amplitude${i}" step="0.1" value="1">
+                    <label>Phase (degrees):</label>
+                    <input type="number" id="phase${i}" step="1" value="0">
+                    <label>Frequency:</label>
+                    <input type="number" id="frequency${i}" step="1" value="${i}">
+                    <br>
+                `;
+            }
+        }
+
+        // Function to generate and plot the signal, FFT magnitude, and phase
+        function generateSignal() {
+            const numFrequencies = parseInt(document.getElementById("numFrequencies").value);
+            const sampleRate = 256;
+            const time = [...Array(sampleRate).keys()].map(i => i / sampleRate);
+            let signal = Array(sampleRate).fill(0);
+            let individualSignals = [];
+
+            // Build the signal by summing cosines and store individual components
+            for (let i = 1; i <= numFrequencies; i++) {
+                const amplitude = parseFloat(document.getElementById(`amplitude${i}`).value);
+                const phase = parseFloat(document.getElementById(`phase${i}`).value) * Math.PI / 180; // Convert to radians
+                const frequency = parseFloat(document.getElementById(`frequency${i}`).value);
+                let componentSignal = [];
+
+                for (let j = 0; j < sampleRate; j++) {
+                    const value = amplitude * Math.cos(2 * Math.PI * frequency * time[j] + phase);
+                    signal[j] += value;
+                    componentSignal.push(value);
+                }
+                individualSignals.push({ time, y: componentSignal, name: `Freq ${frequency} Hz` });
+            }
+
+            plotIndividualSignals(individualSignals);
+            plotSignal(time, signal);
+            computeAndPlotFFT(signal, sampleRate);
+        }
+
+        // Plot individual frequency components
+        function plotIndividualSignals(individualSignals) {
+            const traces = individualSignals.map(({ time, y, name }) => ({
+                x: time,
+                y,
+                mode: 'lines',
+                name
+            }));
+            const layout = {
+                title: 'Individual Frequency Components',
+                xaxis: { title: 'Time' },
+                yaxis: { title: 'Amplitude' }
+            };
+            Plotly.newPlot('individualSignalsPlot', traces, layout);
+        }
+
+        // Plot the combined signal
+        function plotSignal(time, signal) {
+            const trace = {
+                x: time,
+                y: signal,
+                mode: 'lines',
+                name: 'Combined Signal'
+            };
+            const layout = {
+                title: 'Generated Signal',
+                xaxis: { title: 'Time' },
+                yaxis: { title: 'Amplitude' }
+            };
+            Plotly.newPlot('signalPlot', [trace], layout);
+        }
+
+        // Compute FFT, adjust frequency range and plot magnitude and phase
+        function computeAndPlotFFT(signal, sampleRate) {
+            const fft = fftReal(signal);
+            const halfN = Math.floor(fft.length / 2);
+            const magnitude = fft.map(z => Math.sqrt(z[0] ** 2 + z[1] ** 2));
+            const phase = fft.map(z => ((Math.atan2(z[1], z[0]) + Math.PI) % (2 * Math.PI)) * (180 / Math.PI)); // Convert phase to degrees
+
+            // Adjust frequency range to [-fs/2, fs/2]
+            const freq = Array.from({ length: magnitude.length }, (_, i) => (i - halfN) * sampleRate / fft.length);
+            const shiftedMagnitude = [...magnitude.slice(halfN), ...magnitude.slice(0, halfN)];
+            const shiftedPhase = [...phase.slice(halfN), ...phase.slice(0, halfN)];
+
+            const magnitudeThreshold = parseFloat(document.getElementById("magnitudeThreshold").value);
+
+            // Plot FFT magnitude with circles on endpoints of significant frequencies
+            const magnitudeLineTrace = {
+                x: freq,
+                y: shiftedMagnitude,
+                mode: 'lines',
+                name: 'FFT Magnitude'
+            };
+            const magnitudeCirclesTrace = {
+                x: freq.filter((_, i) => shiftedMagnitude[i] > magnitudeThreshold),
+                y: shiftedMagnitude.filter(value => value > magnitudeThreshold),
+                mode: 'markers',
+                marker: { symbol: 'circle', size: 8 },
+                name: 'Significant Magnitudes'
+            };
+            const magnitudeLayout = {
+                title: 'FFT Magnitude (Centered)',
+                xaxis: { title: 'Frequency (Hz)' },
+                yaxis: { title: 'Magnitude' }
+            };
+            Plotly.newPlot('fftMagnitudePlot', [magnitudeLineTrace, magnitudeCirclesTrace], magnitudeLayout);
+
+            // Plot FFT phase only for significant frequencies, but keep full x-axis range
+            const significantPhases = shiftedPhase.map((value, i) => shiftedMagnitude[i] > magnitudeThreshold ? value : null); // Set non-significant phases to null
+            const phaseTrace = {
+                x: freq,
+                y: significantPhases,
+                mode: 'markers+lines',
+                marker: { symbol: 'circle', size: 8 },
+                name: 'FFT Phase (Significant)'
+            };
+            const phaseLayout = {
+                title: 'FFT Phase (Degrees, Significant)',
+                xaxis: { title: 'Frequency (Hz)' },
+                yaxis: { title: 'Phase (degrees)', range: [0, 360] }
+            };
+            Plotly.newPlot('fftPhasePlot', [phaseTrace], phaseLayout);
+        }
+
+        // FFT implementation using DFT
+        function fftReal(signal) {
+            const N = signal.length;
+            const result = [];
+            for (let k = 0; k < N; k++) {
+                let real = 0;
+                let imag = 0;
+                for (let n = 0; n < N; n++) {
+                    const angle = (2 * Math.PI * k * n) / N;
+                    real += signal[n] * Math.cos(angle);
+                    imag -= signal[n] * Math.sin(angle);
+                }
+                result.push([real, imag]);
+            }
+            return result;
+        }
+    </script>
+</body>
+</html>
