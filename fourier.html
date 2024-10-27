@@ -20,7 +20,7 @@
     
     <div>
         <label for="magnitudeThreshold">Magnitude Threshold: </label>
-        <input type="number" id="magnitudeThreshold" step="0.0001" value="0.001">
+        <input type="number" id="magnitudeThreshold" step="0.0001" value="0.001" oninput="generateSignal()">
     </div>
     
     <div id="individualSignalsPlot"></div>
@@ -39,11 +39,11 @@
                 frequencyControls.innerHTML += `
                     <h4>Frequency ${i}</h4>
                     <label>Amplitude:</label>
-                    <input type="number" id="amplitude${i}" step="0.1" value="1">
+                    <input type="number" id="amplitude${i}" step="0.1" value="1" oninput="generateSignal()">
                     <label>Phase (degrees):</label>
-                    <input type="number" id="phase${i}" step="1" value="0">
+                    <input type="number" id="phase${i}" step="1" value="0" oninput="generateSignal()">
                     <label>Frequency:</label>
-                    <input type="number" id="frequency${i}" step="1" value="${i}">
+                    <input type="number" id="frequency${i}" step="1" value="${i}" oninput="generateSignal()">
                     <br>
                 `;
             }
@@ -112,12 +112,19 @@
         // Compute FFT, adjust frequency range and plot magnitude and phase
         function computeAndPlotFFT(signal, sampleRate) {
             const fft = fftReal(signal);
-            const halfN = Math.floor(fft.length / 2);
-            const magnitude = fft.map(z => Math.sqrt(z[0] ** 2 + z[1] ** 2));
-            const phase = fft.map(z => ((Math.atan2(z[1], z[0]) + Math.PI) % (2 * Math.PI)) * (180 / Math.PI)); // Convert phase to degrees
+            const N = signal.length;
+            const halfN = Math.floor(N / 2);
+
+            // Normalize magnitude and adjust phase to -180 to 180
+            const magnitude = fft.map(z => (2 / N) * Math.sqrt(z[0] ** 2 + z[1] ** 2));
+            const phase = fft.map(z => {
+                let angle = Math.atan2(z[1], z[0]) * (180 / Math.PI); // Convert phase to degrees
+                if (angle > 180) angle -= 360; // Wrap phase to -180 to 180
+                return angle;
+            });
 
             // Adjust frequency range to [-fs/2, fs/2]
-            const freq = Array.from({ length: magnitude.length }, (_, i) => (i - halfN) * sampleRate / fft.length);
+            const freq = Array.from({ length: N }, (_, i) => (i - halfN) * sampleRate / N);
             const shiftedMagnitude = [...magnitude.slice(halfN), ...magnitude.slice(0, halfN)];
             const shiftedPhase = [...phase.slice(halfN), ...phase.slice(0, halfN)];
 
@@ -156,7 +163,7 @@
             const phaseLayout = {
                 title: 'FFT Phase (Degrees, Significant)',
                 xaxis: { title: 'Frequency (Hz)' },
-                yaxis: { title: 'Phase (degrees)', range: [0, 360] }
+                yaxis: { title: 'Phase (degrees)', range: [-180, 180] }
             };
             Plotly.newPlot('fftPhasePlot', [phaseTrace], phaseLayout);
         }
