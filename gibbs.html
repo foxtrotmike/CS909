@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gibbs Phenomenon with Error Plot</title>
+</head>
+<body>
+    <h3>Gibbs Phenomenon Demonstration</h3>
+    <p>Select the maximum number of terms in the Fourier series approximation:</p>
+    <input type="range" id="termSlider" min="1" max="101" step="2" value="1" />
+    <label id="termLabel">Max Number of Terms: 1</label>
+    <br />
+    <canvas id="canvas" width="800" height="300" style="border:1px solid black; margin-top: 10px;"></canvas>
+    <h4>Error Plot (Overshoot Error vs. Number of Terms)</h4>
+    <canvas id="errorCanvas" width="800" height="300" style="border:1px solid black;"></canvas>
+
+    <script>
+        const canvas = document.getElementById("canvas");
+        const errorCanvas = document.getElementById("errorCanvas");
+        const ctx = canvas.getContext("2d");
+        const errorCtx = errorCanvas.getContext("2d");
+        const termSlider = document.getElementById("termSlider");
+        const termLabel = document.getElementById("termLabel");
+
+        // Canvas settings
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerY = height / 2;
+        const amplitude = 100;  // Amplitude of the square wave
+        const frequency = 2 * Math.PI / width;  // Frequency of the Fourier components
+
+        // Draw square wave as a reference
+        function drawSquareWave() {
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = 0; x < width; x++) {
+                const y = x < width / 2 ? centerY - amplitude : centerY + amplitude;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // Draw Fourier series approximation of the square wave
+        function drawFourierApproximation(numTerms) {
+            ctx.clearRect(0, 0, width, height);
+            drawSquareWave(); // Draw reference square wave
+
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+
+            for (let x = 0; x < width; x++) {
+                let sum = 0;
+                for (let k = 1; k <= numTerms; k += 2) {  // Only odd harmonics
+                    sum += (4 / (k * Math.PI)) * Math.sin(k * frequency * x);
+                }
+                const y = centerY - amplitude * sum;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // Calculate empirical overshoot error
+        function calculateOvershoot(numTerms) {
+            let maxOvershoot = 0;
+
+            for (let x = 0; x < width; x++) {
+                let sum = 0;
+                for (let k = 1; k <= numTerms; k += 2) {
+                    sum += (4 / (k * Math.PI)) * Math.sin(k * frequency * x);
+                }
+                const y = centerY - amplitude * sum;
+
+                // Calculate overshoot error near the edges of the square wave
+                if ((x > width / 2 - 20 && x < width / 2 + 20) || (x > 0 && x < 20)) {
+                    const targetY = x < width / 2 ? centerY - amplitude : centerY + amplitude;
+                    const overshoot = Math.abs(y - targetY);
+                    if (overshoot > maxOvershoot) maxOvershoot = overshoot;
+                }
+            }
+            return (maxOvershoot / amplitude) * 100; // Return as percentage
+        }
+
+        // Calculate theoretical overshoot error based on the Gibbs phenomenon
+        function theoreticalOvershoot(numTerms) {
+            return (100 / Math.PI) * Math.log(numTerms); // Formula for theoretical overshoot in %
+        }
+
+        // Plot empirical and theoretical error as a function of number of terms
+        function plotError(numTerms) {
+            errorCtx.clearRect(0, 0, errorCanvas.width, errorCanvas.height);
+            errorCtx.strokeStyle = "blue";
+            errorCtx.lineWidth = 1;
+            errorCtx.beginPath();
+
+            // Plot empirical error
+            for (let i = 1; i <= numTerms; i += 2) {
+                const error = calculateOvershoot(i);
+                const x = (i / numTerms) * errorCanvas.width;
+                const y = errorCanvas.height - (error / 10) * errorCanvas.height;
+                if (i === 1) errorCtx.moveTo(x, y);
+                else errorCtx.lineTo(x, y);
+            }
+            errorCtx.stroke();
+
+            // Plot theoretical error
+            errorCtx.strokeStyle = "green";
+            errorCtx.lineWidth = 1;
+            errorCtx.beginPath();
+            for (let i = 1; i <= numTerms; i += 2) {
+                const error = theoreticalOvershoot(i);
+                const x = (i / numTerms) * errorCanvas.width;
+                const y = errorCanvas.height - (error / 10) * errorCanvas.height;
+                if (i === 1) errorCtx.moveTo(x, y);
+                else errorCtx.lineTo(x, y);
+            }
+            errorCtx.stroke();
+
+            // Labels
+            errorCtx.fillStyle = "black";
+            errorCtx.fillText("Overshoot Error (%)", 10, 10);
+            errorCtx.fillText("Empirical Error (Blue), Theoretical Error (Green)", 10, 30);
+        }
+
+        // Update drawings when the slider value changes
+        termSlider.addEventListener("input", () => {
+            const numTerms = parseInt(termSlider.value);
+            termLabel.textContent = `Max Number of Terms: ${numTerms}`;
+            drawFourierApproximation(numTerms);
+            plotError(numTerms);
+        });
+
+        // Initial drawing
+        drawFourierApproximation(1);
+        plotError(1);
+    </script>
+</body>
+</html>
