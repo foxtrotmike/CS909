@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Gradient and Eigenvalue Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        canvas {
+            border: 1px solid black;
+            margin-top: 10px;
+        }
+        table {
+            margin: 0 auto;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Gradient and Eigenvalue Calculator</h1>
+    <label for="imageSelect">Select Image:</label>
+    <select id="imageSelect">
+        <option value="flat">Flat Image</option>
+        <option value="edge">Edge Image</option>
+        <option value="edgeT">Transposed Edge Image</option>
+        <option value="combined">Combined Edges Image</option>
+    </select>
+    <button onclick="processImage()">Process Image</button>
+    <canvas id="imageCanvas" width="100" height="100"></canvas>
+    <div id="results"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+    <script>
+        // Function to create a 5x5 flat image
+        function createFlatImage() {
+            return Array(5).fill().map(() => Array(5).fill(1));
+        }
+
+        // Function to create a 5x5 image with an edge
+        function createEdgeImage() {
+            return Array(5).fill().map((_, i) => Array(5).fill(i < 3 ? 1 : 0));
+        }
+
+        // Function to transpose a matrix
+        function transposeMatrix(matrix) {
+            return matrix[0].map((_, colIndex) => matrix.map(row => row[colIndex]));
+        }
+
+        // Function to add two matrices
+        function addMatrices(matrixA, matrixB) {
+            return matrixA.map((row, i) => row.map((val, j) => val + matrixB[i][j]));
+        }
+
+        // Function to calculate the gradient matrix M
+        function calculateMatrixM(image) {
+            const I_x = image.map((row, i) => row.map((_, j) => {
+                const left = j > 0 ? image[i][j - 1] : image[i][j];
+                const right = j < 4 ? image[i][j + 1] : image[i][j];
+                return (right - left) / 2;
+            }));
+
+            const I_y = image.map((row, i) => row.map((_, j) => {
+                const top = i > 0 ? image[i - 1][j] : image[i][j];
+                const bottom = i < 4 ? image[i + 1][j] : image[i][j];
+                return (bottom - top) / 2;
+            }));
+
+            const sum = (matrix) => matrix.flat().reduce((acc, val) => acc + val, 0);
+
+            const M = [
+                [sum(I_x.map(row => row.map(val => val ** 2))), sum(I_x.flat().map((val, idx) => val * I_y.flat()[idx]))],
+                [sum(I_x.flat().map((val, idx) => val * I_y.flat()[idx])), sum(I_y.map(row => row.map(val => val ** 2)))]
+            ];
+
+            return M;
+        }
+
+        // Function to display the image on canvas
+        function displayImage(image) {
+            const canvas = document.getElementById('imageCanvas');
+            const ctx = canvas.getContext('2d');
+            const scale = 20; // Each pixel in the 5x5 image is scaled to a 20x20 block
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous image
+
+            image.forEach((row, i) => {
+                row.forEach((val, j) => {
+                    const color = val * 255;
+                    ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+                    ctx.fillRect(j * scale, i * scale, scale, scale);
+                });
+            });
+        }
+
+        // Function to process the selected image
+        function processImage() {
+            const selection = document.getElementById('imageSelect').value;
+            let image;
+
+            switch (selection) {
+                case 'flat':
+                    image = createFlatImage();
+                    break;
+                case 'edge':
+                    image = createEdgeImage();
+                    break;
+                case 'edgeT':
+                    image = transposeMatrix(createEdgeImage());
+                    break;
+                case 'combined':
+                    image = addMatrices(createEdgeImage(), transposeMatrix(createEdgeImage()));
+                    break;
+                default:
+                    alert('Invalid selection');
+                    return;
+            }
+
+            displayImage(image);
+
+            const M = calculateMatrixM(image);
+            const eigen = math.eigs(M);
+            const energy = Math.max(...eigen.values);
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h2>Results</h2>
+                <table>
+                    <tr>
+                        <th>Matrix M</th>
+                        <td>
+                            <table>
+                                <tr>
+                                    <td>${M[0][0].toFixed(2)}</td>
+                                    <td>${M[0][1].toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                    <td>${M[1][0].toFixed(2)}</td>
+                                    <td>${M[1][1].toFixed(2)}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Eigenvalues</th>
+                        <td>${eigen.values.map(val => val.toFixed(2)).join(', ')}</td>
+                    </tr>
+                    <tr>
+                        <th>Energy (max eigenvalue)</th>
+                        <td>${energy.toFixed(2)}</td>
+                    </tr>
+                </table>
+            `;
+        }
+    </script>
+</body>
+</html>
