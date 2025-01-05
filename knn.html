@@ -34,8 +34,8 @@
         <ul>
             <li>Select the type of point you want to place (Red or Blue) using the dropdown menu.</li>
             <li>Click anywhere on the canvas to place the selected point.</li>
+            <li>Click on an existing point to highlight its `K` nearest neighbors.</li>
             <li>Adjust the number of neighbors (K) to see how the decision boundary changes dynamically.</li>
-            <li>The value of K is automatically limited to the total number of points minus one.</li>
             <li>Use the "Clear Points" button to reset the canvas and start over.</li>
         </ul>
     </div>
@@ -60,17 +60,18 @@
 
         let points = []; // Stores data points
         let k = 3; // Default number of neighbors
+        let selectedPoint = null; // Keeps track of the currently selected point
 
         // Function to clear points
         function clearPoints() {
             points = [];
+            selectedPoint = null;
             updateKMax();
             drawCanvas();
         }
 
         // Function to classify a point using KNN
         function classifyPoint(x, y) {
-            // Compute distances to all points
             const distances = points.map(point => {
                 const dx = point.x - x;
                 const dy = point.y - y;
@@ -92,7 +93,6 @@
                 classCounts[neighbor.class]++;
             });
 
-            // Determine the majority class
             return classCounts.red > classCounts.blue ? 'red' : 'blue';
         }
 
@@ -107,6 +107,11 @@
                     ctx.fillStyle = color === 'red' ? 'rgba(255, 0, 0, 0.1)' : 'rgba(0, 0, 255, 0.1)';
                     ctx.fillRect(x, y, 5, 5);
                 }
+            }
+
+            // Highlight K nearest neighbors of the selected point
+            if (selectedPoint) {
+                highlightKNearestNeighbors(selectedPoint);
             }
 
             // Draw points
@@ -127,13 +132,39 @@
         function drawDiamond(x, y, color) {
             ctx.fillStyle = color;
             ctx.beginPath();
-            ctx.moveTo(x, y - 5); // Top point
-            ctx.lineTo(x + 5, y); // Right point
-            ctx.lineTo(x, y + 5); // Bottom point
-            ctx.lineTo(x - 5, y); // Left point
+            ctx.moveTo(x, y - 5);
+            ctx.lineTo(x + 5, y);
+            ctx.lineTo(x, y + 5);
+            ctx.lineTo(x - 5, y);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
+        }
+
+        // Function to highlight K nearest neighbors of a point
+        function highlightKNearestNeighbors(point) {
+            const distances = points.map(p => {
+                const dx = p.x - point.x;
+                const dy = p.y - point.y;
+                return {
+                    ...p,
+                    distance: Math.sqrt(dx * dx + dy * dy)
+                };
+            });
+
+            // Sort by distance and get the nearest K points
+            distances.sort((a, b) => a.distance - b.distance);
+            const nearestNeighbors = distances.slice(1, k + 1); // Exclude the point itself
+
+            // Draw lines to the nearest neighbors
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            nearestNeighbors.forEach(neighbor => {
+                ctx.beginPath();
+                ctx.moveTo(point.x, point.y);
+                ctx.lineTo(neighbor.x, neighbor.y);
+                ctx.stroke();
+            });
         }
 
         // Function to update the maximum value of K
@@ -146,15 +177,33 @@
             }
         }
 
-        // Add event listener to canvas for adding points
+        // Function to check if a click is near an existing point
+        function findPointAt(x, y) {
+            return points.find(point => {
+                const dx = point.x - x;
+                const dy = point.y - y;
+                return Math.sqrt(dx * dx + dy * dy) <= 5; // 5-pixel threshold for proximity
+            });
+        }
+
+        // Add event listener to canvas for adding or selecting points
         canvas.addEventListener('click', (event) => {
             const rect = canvas.getBoundingClientRect();
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
 
-            // Get the selected class
-            const pointClass = document.getElementById('point-class').value;
-            points.push({ x, y, class: pointClass });
+            // Check if the click is near an existing point
+            const clickedPoint = findPointAt(x, y);
+            if (clickedPoint) {
+                // Select the existing point
+                selectedPoint = clickedPoint;
+            } else {
+                // Add a new point
+                const pointClass = document.getElementById('point-class').value;
+                const newPoint = { x, y, class: pointClass };
+                points.push(newPoint);
+                selectedPoint = null; // Deselect any selected point
+            }
 
             updateKMax();
             drawCanvas();
