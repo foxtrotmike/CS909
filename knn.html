@@ -34,8 +34,9 @@
         <ul>
             <li>Select the type of point you want to place (Red or Blue) using the dropdown menu.</li>
             <li>Click anywhere on the canvas to place the selected point.</li>
-            <li>Click on an existing point to highlight its `K` nearest neighbors.</li>
-            <li>Adjust the number of neighbors (K) to see how the decision boundary changes dynamically.</li>
+            <li>Click on an existing point to select it. The `K` nearest neighbors of the selected point will be highlighted with lines.</li>
+            <li>Adjust the number of neighbors (K) using the input box to see how the neighbors and decision boundary change dynamically.</li>
+            <li>Select a distance metric from the dropdown to observe its effect on the decision boundaries.</li>
             <li>Use the "Clear Points" button to reset the canvas and start over.</li>
         </ul>
     </div>
@@ -48,6 +49,13 @@
         </select>
         <label for="k-value">Num Neighbors (K):</label>
         <input type="number" id="k-value" min="1" value="3">
+        <label for="distance-metric">Distance Metric:</label>
+        <select id="distance-metric">
+            <option value="euclidean">Euclidean</option>
+            <option value="manhattan">Manhattan</option>
+            <option value="chebyshev">Chebyshev</option>
+            <option value="cosine">Cosine</option>
+        </select>
         <button onclick="clearPoints()">Clear Points</button>
     </div>
     <footer>
@@ -57,6 +65,7 @@
         const canvas = document.getElementById('knnCanvas');
         const ctx = canvas.getContext('2d');
         const kInput = document.getElementById('k-value');
+        const metricInput = document.getElementById('distance-metric');
 
         let points = []; // Stores data points
         let k = 3; // Default number of neighbors
@@ -70,24 +79,40 @@
             drawCanvas();
         }
 
+        // Function to calculate distance between two points
+        function calculateDistance(point1, point2, metric = 'euclidean') {
+            const dx = point1.x - point2.x;
+            const dy = point1.y - point2.y;
+
+            switch (metric) {
+                case 'euclidean':
+                    return Math.sqrt(dx * dx + dy * dy);
+                case 'manhattan':
+                    return Math.abs(dx) + Math.abs(dy);
+                case 'chebyshev':
+                    return Math.max(Math.abs(dx), Math.abs(dy));
+                case 'cosine':
+                    const dotProduct = point1.x * point2.x + point1.y * point2.y;
+                    const magnitude1 = Math.sqrt(point1.x ** 2 + point1.y ** 2);
+                    const magnitude2 = Math.sqrt(point2.x ** 2 + point2.y ** 2);
+                    return 1 - (dotProduct / (magnitude1 * magnitude2));
+                default:
+                    return Math.sqrt(dx * dx + dy * dy); // Default to Euclidean
+            }
+        }
+
         // Function to classify a point using KNN
         function classifyPoint(x, y) {
             const distances = points.map(point => {
-                const dx = point.x - x;
-                const dy = point.y - y;
                 return {
                     ...point,
-                    distance: Math.sqrt(dx * dx + dy * dy)
+                    distance: calculateDistance({ x, y }, point, metricInput.value)
                 };
             });
 
-            // Sort by distance
             distances.sort((a, b) => a.distance - b.distance);
-
-            // Get the nearest K points
             const nearestNeighbors = distances.slice(0, k);
 
-            // Count class occurrences
             const classCounts = { red: 0, blue: 0 };
             nearestNeighbors.forEach(neighbor => {
                 classCounts[neighbor.class]++;
@@ -100,7 +125,6 @@
         function drawCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw decision boundary
             for (let x = 0; x < canvas.width; x += 5) {
                 for (let y = 0; y < canvas.height; y += 5) {
                     const color = classifyPoint(x, y);
@@ -109,12 +133,10 @@
                 }
             }
 
-            // Highlight K nearest neighbors of the selected point
             if (selectedPoint) {
                 highlightKNearestNeighbors(selectedPoint);
             }
 
-            // Draw points
             points.forEach(point => {
                 if (point.class === 'red') {
                     drawDiamond(point.x, point.y, 'red');
@@ -144,19 +166,15 @@
         // Function to highlight K nearest neighbors of a point
         function highlightKNearestNeighbors(point) {
             const distances = points.map(p => {
-                const dx = p.x - point.x;
-                const dy = p.y - point.y;
                 return {
                     ...p,
-                    distance: Math.sqrt(dx * dx + dy * dy)
+                    distance: calculateDistance(point, p, metricInput.value)
                 };
             });
 
-            // Sort by distance and get the nearest K points
             distances.sort((a, b) => a.distance - b.distance);
-            const nearestNeighbors = distances.slice(1, k + 1); // Exclude the point itself
+            const nearestNeighbors = distances.slice(1, k + 1);
 
-            // Draw lines to the nearest neighbors
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 1;
             nearestNeighbors.forEach(neighbor => {
@@ -182,7 +200,7 @@
             return points.find(point => {
                 const dx = point.x - x;
                 const dy = point.y - y;
-                return Math.sqrt(dx * dx + dy * dy) <= 5; // 5-pixel threshold for proximity
+                return Math.sqrt(dx * dx + dy * dy) <= 5;
             });
         }
 
@@ -192,17 +210,14 @@
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
 
-            // Check if the click is near an existing point
             const clickedPoint = findPointAt(x, y);
             if (clickedPoint) {
-                // Select the existing point
                 selectedPoint = clickedPoint;
             } else {
-                // Add a new point
                 const pointClass = document.getElementById('point-class').value;
                 const newPoint = { x, y, class: pointClass };
                 points.push(newPoint);
-                selectedPoint = null; // Deselect any selected point
+                selectedPoint = null;
             }
 
             updateKMax();
@@ -215,7 +230,11 @@
             drawCanvas();
         });
 
-        // Initial canvas draw
+        // Re-draw when distance metric changes
+        metricInput.addEventListener('change', () => {
+            drawCanvas();
+        });
+
         drawCanvas();
     </script>
 </body>
