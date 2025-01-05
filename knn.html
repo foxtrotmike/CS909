@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K-Nearest Neighbors Demo</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 20px auto;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .instructions {
+            text-align: center;
+            margin: 20px auto;
+            font-size: 16px;
+            width: 80%;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">K-Nearest Neighbors Demo</h1>
+    <div class="instructions">
+        <p>Instructions:</p>
+        <ul>
+            <li>Select the type of point you want to place (Red or Blue) using the dropdown menu.</li>
+            <li>Click anywhere on the canvas to place the selected point.</li>
+            <li>Adjust the number of neighbors (K) to see how the decision boundary changes dynamically.</li>
+            <li>The value of K is automatically limited to the total number of points minus one.</li>
+            <li>Use the "Clear Points" button to reset the canvas and start over.</li>
+        </ul>
+    </div>
+    <canvas id="knnCanvas" width="600" height="400"></canvas>
+    <div class="controls">
+        <label for="point-class">Point Type:</label>
+        <select id="point-class">
+            <option value="red">Red</option>
+            <option value="blue">Blue</option>
+        </select>
+        <label for="k-value">Num Neighbors (K):</label>
+        <input type="number" id="k-value" min="1" value="3">
+        <button onclick="clearPoints()">Clear Points</button>
+    </div>
+    <footer>
+        (c) Fayyaz Minhas
+    </footer>
+    <script>
+        const canvas = document.getElementById('knnCanvas');
+        const ctx = canvas.getContext('2d');
+        const kInput = document.getElementById('k-value');
+
+        let points = []; // Stores data points
+        let k = 3; // Default number of neighbors
+
+        // Function to clear points
+        function clearPoints() {
+            points = [];
+            updateKMax();
+            drawCanvas();
+        }
+
+        // Function to classify a point using KNN
+        function classifyPoint(x, y) {
+            // Compute distances to all points
+            const distances = points.map(point => {
+                const dx = point.x - x;
+                const dy = point.y - y;
+                return {
+                    ...point,
+                    distance: Math.sqrt(dx * dx + dy * dy)
+                };
+            });
+
+            // Sort by distance
+            distances.sort((a, b) => a.distance - b.distance);
+
+            // Get the nearest K points
+            const nearestNeighbors = distances.slice(0, k);
+
+            // Count class occurrences
+            const classCounts = { red: 0, blue: 0 };
+            nearestNeighbors.forEach(neighbor => {
+                classCounts[neighbor.class]++;
+            });
+
+            // Determine the majority class
+            return classCounts.red > classCounts.blue ? 'red' : 'blue';
+        }
+
+        // Function to draw the canvas
+        function drawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw decision boundary
+            for (let x = 0; x < canvas.width; x += 5) {
+                for (let y = 0; y < canvas.height; y += 5) {
+                    const color = classifyPoint(x, y);
+                    ctx.fillStyle = color === 'red' ? 'rgba(255, 0, 0, 0.1)' : 'rgba(0, 0, 255, 0.1)';
+                    ctx.fillRect(x, y, 5, 5);
+                }
+            }
+
+            // Draw points
+            points.forEach(point => {
+                if (point.class === 'red') {
+                    drawDiamond(point.x, point.y, 'red');
+                } else {
+                    ctx.fillStyle = 'blue';
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            });
+        }
+
+        // Function to draw a diamond shape
+        function drawDiamond(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 5); // Top point
+            ctx.lineTo(x + 5, y); // Right point
+            ctx.lineTo(x, y + 5); // Bottom point
+            ctx.lineTo(x - 5, y); // Left point
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // Function to update the maximum value of K
+        function updateKMax() {
+            const maxK = Math.max(points.length - 1, 1);
+            kInput.max = maxK;
+            if (k > maxK) {
+                k = maxK;
+                kInput.value = maxK;
+            }
+        }
+
+        // Add event listener to canvas for adding points
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            // Get the selected class
+            const pointClass = document.getElementById('point-class').value;
+            points.push({ x, y, class: pointClass });
+
+            updateKMax();
+            drawCanvas();
+        });
+
+        // Add event listener to update K value
+        kInput.addEventListener('input', (event) => {
+            k = parseInt(event.target.value, 10);
+            drawCanvas();
+        });
+
+        // Initial canvas draw
+        drawCanvas();
+    </script>
+</body>
+</html>
