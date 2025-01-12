@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kernelized SVM Demo</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+        .control {
+            margin: 10px 0;
+        }
+        .alpha-control {
+            display: flex;
+            align-items: center;
+        }
+        .alpha-control input {
+            margin-left: 10px;
+            width: 50px;
+        }
+        #footer {
+            margin-top: 20px;
+            font-size: 0.8em;
+            color: gray;
+        }
+        #kernel-matrix {
+            margin-top: 20px;
+            white-space: pre;
+            font-family: monospace;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control">
+            <label for="dataset-select">Select Dataset: </label>
+            <select id="dataset-select">
+                <option value="and" selected>AND Dataset</option>
+                <option value="xor">XOR Dataset</option>
+            </select>
+        </div>
+        <div class="control">
+            <label for="kernel-select">Select Kernel: </label>
+            <select id="kernel-select">
+                <option value="polynomial" selected>k(a,b) = (a^T b + h)^d</option>
+                <option value="rbf">RBF Kernel (exp(-γ ||a-b||²))</option>
+            </select>
+        </div>
+        <div class="control" id="polynomial-controls">
+            <label for="h">h: </label>
+            <input type="number" id="h" step="0.01" value="0">
+            <label for="degree">Degree (d): </label>
+            <input type="number" id="degree" step="1" min="1" value="1">
+        </div>
+        <div class="control" id="gamma-control" style="display: none;">
+            <label for="gamma-slider">γ (RBF Kernel): </label>
+            <input type="range" id="gamma-slider" min="0.1" max="10" step="0.1" value="1">
+            <span id="gamma-value">1</span>
+        </div>
+        <div class="control">
+            <label for="bias">Bias (b): </label>
+            <input type="number" id="bias" step="0.01" value="0.0">
+        </div>
+        <div id="alpha-controls"></div>
+        <div id="loss">Total Loss: 0</div>
+    </div>
+    <div id="kernel-matrix"></div>
+    <div id="plot"></div>
+    <div id="footer">
+        &copy; 2025 Fayyaz Minhas
+    </div>
+
+    <script>
+        let dataPoints = [
+            { id: 1, x: 0, y: 0, class: -1, alpha: 0 },
+            { id: 2, x: 0, y: 1, class: -1, alpha: -10 },
+            { id: 3, x: 1, y: 0, class: -1, alpha: -10 },
+            { id: 4, x: 1, y: 1, class: 1, alpha: 14 }
+        ];
+
+        const xorDataset = [
+            { id: 1, x: 0, y: 0, class: -1, alpha: 0 },
+            { id: 2, x: 0, y: 1, class: 1, alpha: 0 },
+            { id: 3, x: 1, y: 0, class: 1, alpha: 0 },
+            { id: 4, x: 1, y: 1, class: -1, alpha: 0 }
+        ];
+
+        const plotDiv = document.getElementById('plot');
+        const alphaControlsDiv = document.getElementById('alpha-controls');
+        const lossDiv = document.getElementById('loss');
+        const kernelMatrixDiv = document.getElementById('kernel-matrix');
+        const datasetSelect = document.getElementById('dataset-select');
+        const kernelSelect = document.getElementById('kernel-select');
+        const gammaControl = document.getElementById('gamma-control');
+        const gammaSlider = document.getElementById('gamma-slider');
+        const gammaValue = document.getElementById('gamma-value');
+        const biasInput = document.getElementById('bias');
+        const hInput = document.getElementById('h');
+        const degreeInput = document.getElementById('degree');
+
+        let gamma = parseFloat(gammaSlider.value);
+        let bias = parseFloat(biasInput.value);
+        let h = parseFloat(hInput.value);
+        let degree = parseInt(degreeInput.value);
+
+        function polynomialKernel(a, b) {
+            return Math.pow(a[0] * b[0] + a[1] * b[1] + h, degree);
+        }
+
+        function rbfKernel(a, b) {
+            const distSquared = Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2);
+            return Math.exp(-gamma * distSquared);
+        }
+
+        function getSelectedKernel() {
+            const selectedKernel = kernelSelect.value;
+            if (selectedKernel === "rbf") return rbfKernel;
+            return polynomialKernel;
+        }
+
+        function computeFx(x) {
+            const kernel = getSelectedKernel();
+            return dataPoints.reduce((sum, point) => {
+                return sum + point.alpha * kernel(x, [point.x, point.y]);
+            }, bias);
+        }
+
+        function updateKernelMatrix() {
+            const kernel = getSelectedKernel();
+            let matrix = "Kernel Matrix (k(xi, xj)):\n";
+            for (let i = 0; i < dataPoints.length; i++) {
+                const row = [];
+                for (let j = 0; j < dataPoints.length; j++) {
+                    const k = kernel([dataPoints[i].x, dataPoints[i].y], [dataPoints[j].x, dataPoints[j].y]);
+                    row.push(k.toFixed(2));
+                }
+                matrix += `Point ${i + 1}: [${row.join(", ")}]\n`;
+            }
+            kernelMatrixDiv.textContent = matrix;
+        }
+
+        function updatePlot() {
+            let totalLoss = 0;
+
+            const xRange = [-1, 2];
+            const yRange = [-1, 2];
+            const gridResolution = 50;
+            const xStep = (xRange[1] - xRange[0]) / gridResolution;
+            const yStep = (yRange[1] - yRange[0]) / gridResolution;
+
+            const xValues = [];
+            const yValues = [];
+            const zValues = [];
+
+            for (let i = 0; i <= gridResolution; i++) {
+                const x = xRange[0] + i * xStep;
+                xValues.push(x);
+                const zRow = [];
+                for (let j = 0; j <= gridResolution; j++) {
+                    const y = yRange[0] + j * yStep;
+                    if (i === 0) yValues.push(y);
+                    const fx = computeFx([x, y]);
+                    zRow.push(fx);
+                }
+                zValues.push(zRow);
+            }
+
+            const contour = {
+                x: xValues,
+                y: yValues,
+                z: zValues,
+                type: 'contour',
+                colorscale: 'Black',
+                contours: {
+                    start: 0,
+                    end: 0,
+                    size: 1,
+                    coloring: 'lines'
+                },
+                line: { color: 'black' }
+            };
+
+            const scatterData = {
+                x: dataPoints.map(point => point.x),
+                y: dataPoints.map(point => point.y),
+                mode: 'markers+text',
+                type: 'scatter',
+                marker: {
+                    size: 12,
+                    color: dataPoints.map(point => (point.class === 1 ? 'red' : 'blue')),
+                    symbol: dataPoints.map(point => (point.class === 1 ? 'square' : 'circle'))
+                },
+                                text: dataPoints.map(point => {
+                    const fx = computeFx([point.x, point.y]);
+                    const loss = Math.max(0, 1 - point.class * fx);
+                    totalLoss += loss;
+
+                    const classification = (fx > 0) === (point.class === 1) ? "✓ Correct" : "✗ Incorrect";
+                    return `ID: ${point.id}<br>Label: ${point.class}<br>f(x): ${fx.toFixed(2)}<br>Loss: ${loss.toFixed(2)}<br>${classification}`;
+                }),
+                textposition: 'top center'
+            };
+
+            const heatmap = {
+                x: xValues,
+                y: yValues,
+                z: zValues,
+                type: 'heatmap',
+                colorscale: 'RdBu',
+                reversescale: true,
+                showscale: true,
+                zmid: 0
+            };
+
+            const layout = {
+                title: 'Kernel-based Decision Function with Boundary and Heatmap',
+                xaxis: { range: xRange, title: 'x1' },
+                yaxis: { range: yRange, title: 'x2' }
+            };
+
+            Plotly.newPlot(plotDiv, [heatmap, contour, scatterData], layout);
+
+            lossDiv.innerText = `Total Loss: ${totalLoss.toFixed(2)}`;
+            updateKernelMatrix();
+        }
+
+        function createAlphaControls() {
+            alphaControlsDiv.innerHTML = '';
+            dataPoints.forEach((point, index) => {
+                const controlDiv = document.createElement('div');
+                controlDiv.className = 'alpha-control';
+                controlDiv.innerHTML = `
+                    <label>α${point.id}: </label>
+                    <input type="number" step="0.01" value="${point.alpha}" data-index="${index}">
+                `;
+                alphaControlsDiv.appendChild(controlDiv);
+            });
+
+            document.querySelectorAll('.alpha-control input').forEach(input => {
+                input.addEventListener('input', event => {
+                    const index = parseInt(event.target.dataset.index);
+                    dataPoints[index].alpha = parseFloat(event.target.value);
+                    updatePlot();
+                });
+            });
+        }
+
+        datasetSelect.addEventListener('change', () => {
+            const selectedDataset = datasetSelect.value;
+            if (selectedDataset === "xor") {
+                dataPoints = JSON.parse(JSON.stringify(xorDataset));
+            } else {
+                dataPoints = [
+                    { id: 1, x: 0, y: 0, class: -1, alpha: 0 },
+                    { id: 2, x: 0, y: 1, class: -1, alpha: -10 },
+                    { id: 3, x: 1, y: 0, class: -1, alpha: -10 },
+                    { id: 4, x: 1, y: 1, class: 1, alpha: 14 }
+                ];
+            }
+            createAlphaControls();
+            updatePlot();
+        });
+
+        kernelSelect.addEventListener('change', () => {
+            const selectedKernel = kernelSelect.value;
+            gammaControl.style.display = selectedKernel === 'rbf' ? 'block' : 'none';
+            document.getElementById('polynomial-controls').style.display = selectedKernel === 'polynomial' ? 'block' : 'none';
+            updatePlot();
+        });
+
+        gammaSlider.addEventListener('input', () => {
+            gamma = parseFloat(gammaSlider.value);
+            gammaValue.textContent = gamma.toFixed(2);
+            updatePlot();
+        });
+
+        hInput.addEventListener('input', () => {
+            h = parseFloat(hInput.value);
+            updatePlot();
+        });
+
+        degreeInput.addEventListener('input', () => {
+            degree = parseInt(degreeInput.value);
+            updatePlot();
+        });
+
+        biasInput.addEventListener('input', () => {
+            bias = parseFloat(biasInput.value);
+            updatePlot();
+        });
+
+        createAlphaControls();
+        updatePlot();
+    </script>
+</body>
+</html>
+
