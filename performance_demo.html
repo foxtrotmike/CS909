@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Binary Classifier Metrics + ROC/PR + Threshold Curves</title>
+  <style>
+    :root { --fg:#111; --muted:#666; --bg:#fff; --card:#f6f7f9; --border:#e3e6ea; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 18px; color: var(--fg); background: var(--bg); }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .grid { display: grid; grid-template-columns: 420px 1fr; gap: 14px; align-items: start; }
+    @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin: 8px 0; }
+    .row label { font-size: 13px; }
+    .row output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+    input[type="range"] { width: 100%; }
+    .small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+    .kpi .name { font-size: 12px; color: var(--muted); }
+    .kpi .value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .kpi .formula { font-size: 12px; color: #333; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    th { text-align: left; background: #fafbfc; color: #222; }
+    tr:last-child td { border-bottom: none; }
+    .cm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .plotRow { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 1000px) { .plotRow { grid-template-columns: 1fr; } }
+
+    /* ✅ FIX: prevent stretching by letting canvas keep its own aspect ratio.
+       We set width:100% and height:auto, and we resize the backing store in JS. */
+    canvas { display:block; width: 100%; height: auto; background: #fff; border: 1px solid var(--border); border-radius: 12px; }
+    .footer { margin-top: 8px; font-size: 12px; color: var(--muted); }
+    .pill { display:inline-block; padding: 2px 8px; border:1px solid var(--border); border-radius:999px; background:#fff; font-size:12px; color:#333; }
+  </style>
+</head>
+<body>
+  <h1>Binary Classifier Metrics Demo (N = 100,000): live metrics + ROC + PR + threshold curves</h1>
+
+  <div class="grid">
+    <div class="card">
+      <div class="row">
+        <label><b>Positive prevalence p</b> (P(Y=1)=p): <span class="pill" id="pPct"></span></label>
+        <output id="pOut"></output>
+      </div>
+      <input id="p" type="range" min="1" max="99" value="50" step="1"/>
+
+      <div class="row">
+        <label><b>Decision threshold t</b> (predict Ŷ=1 if score ≥ t): <span class="pill" id="tPill"></span></label>
+        <output id="tOut"></output>
+      </div>
+      <input id="t" type="range" min="0" max="100" value="50" step="1"/>
+
+      <div class="row">
+        <label><b>Model separation</b> (higher ⇒ easier problem)</label>
+        <output id="sepOut"></output>
+      </div>
+      <input id="sep" type="range" min="0" max="400" value="160" step="5"/>
+
+      <div class="row">
+        <label><b>Calibration noise</b> (higher ⇒ noisier probabilities)</label>
+        <output id="noiseOut"></output>
+      </div>
+      <input id="noise" type="range" min="0" max="150" value="25" step="1"/>
+
+      <div class="row">
+        <label><b>Random seed</b></label>
+        <output id="seedOut"></output>
+      </div>
+      <input id="seed" type="range" min="1" max="999" value="42" step="1"/>
+
+      <div class="row">
+        <button id="regen">Regenerate population</button>
+        <button id="resetT">Reset threshold to 0.50</button>
+      </div>
+
+      <div class="small">
+        <div><b>Data generator (synthetic)</b></div>
+        <div>
+          Labels Y ~ Bernoulli(p). Scores S in [0,1] from two Beta distributions:
+          S|Y=1 ~ Beta(a<sub>1</sub>, b<sub>1</sub>) and S|Y=0 ~ Beta(a<sub>0</sub>, b<sub>0</sub>).
+          Separation pushes class means apart; noise reduces Beta concentration.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="stats" id="kpis"></div>
+
+      <div style="height:10px"></div>
+
+      <div class="cm">
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:6px;"><b>Confusion matrix</b> at threshold t</div>
+          <table>
+            <thead>
+              <tr><th></th><th>Actual Y=1</th><th>Actual Y=0</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Pred Ŷ=1</b></td><td id="TP"></td><td id="FP"></td></tr>
+              <tr><td><b>Pred Ŷ=0</b></td><td id="FN"></td><td id="TN"></td></tr>
+            </tbody>
+          </table>
+          <div class="footer">TP=true positives, FP=false positives, TN=true negatives, FN=false negatives.</div>
+        </div>
+
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin-bottom:6px;"><b>Quick notes</b></div>
+          <div class="small" id="notes"></div>
+        </div>
+      </div>
+
+      <div style="height:14px"></div>
+
+      <div>
+        <div style="font-size:13px; color:var(--muted); margin:0 0 6px;">
+          <b>Threshold curves</b> (Sensitivity, Specificity, PPV vs threshold)
+        </div>
+        <!-- No fixed width/height here; JS sets exact backing-store size to avoid stretch -->
+        <canvas id="thr"></canvas>
+        <div class="footer" id="thrText"></div>
+      </div>
+
+      <div style="height:14px"></div>
+
+      <div class="plotRow">
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin:0 0 6px;"><b>ROC curve</b> (TPR vs FPR)</div>
+          <canvas id="roc"></canvas>
+          <div class="footer" id="aucText"></div>
+        </div>
+
+        <div>
+          <div style="font-size:13px; color:var(--muted); margin:0 0 6px;"><b>Precision–Recall curve</b> (Precision vs Recall)</div>
+          <canvas id="pr"></canvas>
+          <div class="footer" id="apText"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+(() => {
+  const N = 100000;
+
+  // ---------- Utilities ----------
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  // Deterministic RNG (Mulberry32)
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a += 0x6D2B79F5;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+  }
+
+  // Standard normal via Box-Muller
+  function randn(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  // Gamma sampler (Marsaglia & Tsang) for shape k>0, scale=1
+  function randGamma(k, rng) {
+    if (k < 1) {
+      const u = rng();
+      return randGamma(k + 1, rng) * Math.pow(u, 1 / k);
+    }
+    const d = k - 1/3;
+    const c = 1 / Math.sqrt(9 * d);
+    while (true) {
+      let x = randn(rng);
+      let v = 1 + c * x;
+      if (v <= 0) continue;
+      v = v * v * v;
+      const u = rng();
+      if (u < 1 - 0.0331 * (x * x) * (x * x)) return d * v;
+      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+    }
+  }
+
+  // Beta(a,b) via Gamma ratio
+  function randBeta(a, b, rng) {
+    const x = randGamma(a, rng);
+    const y = randGamma(b, rng);
+    return x / (x + y);
+  }
+
+  function fmt(x, digits=4) {
+    if (!isFinite(x)) return "—";
+    return x.toFixed(digits);
+  }
+
+  function aucTrapezoid(xs, ys) {
+    let area = 0;
+    for (let i = 1; i < xs.length; i++) {
+      const dx = xs[i] - xs[i-1];
+      area += dx * (ys[i] + ys[i-1]) / 2;
+    }
+    return area;
+  }
+
+  // ✅ FIX: size canvases from CSS width and a chosen aspect ratio, with DPR-aware backing store.
+  function fitCanvas(canvas, aspectRatio /* width/height */, maxHeightPx = 380) {
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 900;
+    let cssH = cssW / aspectRatio;
+    cssH = Math.min(cssH, maxHeightPx);
+
+    canvas.style.height = cssH + "px";       // ensures layout height matches our intended ratio
+    canvas.width = Math.round(cssW * dpr);   // backing store
+    canvas.height = Math.round(cssH * dpr);
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // draw in CSS pixel coords
+    return {ctx, W: cssW, H: cssH};
+  }
+
+  // ---------- Data generation ----------
+  let labels = new Uint8Array(N);
+  let scores = new Float64Array(N);
+
+  function paramsFromControls(sep, noise) {
+    const s = sep; // 0..1
+    const muPos = clamp01(0.5 + 0.35 * s);
+    const muNeg = clamp01(0.5 - 0.35 * s);
+    const conc = Math.max(2, 80 - noise);
+
+    const a1 = Math.max(0.5, muPos * conc);
+    const b1 = Math.max(0.5, (1 - muPos) * conc);
+    const a0 = Math.max(0.5, muNeg * conc);
+    const b0 = Math.max(0.5, (1 - muNeg) * conc);
+
+    return {a1,b1,a0,b0, muPos, muNeg, conc};
+  }
+
+  function generatePopulation() {
+    const p = +els.p.value / 100;
+    const sep = +els.sep.value / 400;
+    const noise = +els.noise.value;
+    const seed = +els.seed.value | 0;
+    const rng = mulberry32(seed);
+
+    const par = paramsFromControls(sep, noise);
+    for (let i = 0; i < N; i++) labels[i] = (rng() < p) ? 1 : 0;
+    for (let i = 0; i < N; i++) scores[i] = labels[i] ? randBeta(par.a1, par.b1, rng) : randBeta(par.a0, par.b0, rng);
+
+    state.generatorInfo = {p, sep, noise, seed, ...par};
+  }
+
+  // ---------- Metrics ----------
+  function confusionAtThreshold(t) {
+    let TP=0, FP=0, TN=0, FN=0;
+    for (let i = 0; i < N; i++) {
+      const y = labels[i];
+      const yhat = (scores[i] >= t) ? 1 : 0;
+      if (y === 1 && yhat === 1) TP++;
+      else if (y === 0 && yhat === 1) FP++;
+      else if (y === 0 && yhat === 0) TN++;
+      else FN++;
+    }
+    return {TP, FP, TN, FN};
+  }
+
+  function metricsFromCM(cm) {
+    const {TP,FP,TN,FN} = cm;
+    const P = TP + FN;
+    const Nn = TN + FP;
+
+    const sensitivity = (P === 0) ? NaN : TP / P;                // TPR
+    const specificity = (Nn === 0) ? NaN : TN / Nn;              // TNR
+    const precision   = (TP + FP === 0) ? NaN : TP / (TP + FP);  // PPV
+    const f1          = (!isFinite(precision) || !isFinite(sensitivity) || (precision + sensitivity === 0))
+                        ? NaN : 2 * precision * sensitivity / (precision + sensitivity);
+    const accuracy    = (TP+TN+FP+FN === 0) ? NaN : (TP + TN) / (TP + TN + FP + FN);
+    const fpr         = (FP + TN === 0) ? NaN : FP / (FP + TN);
+
+    return {sensitivity, specificity, precision, f1, accuracy, fpr, P, Nn};
+  }
+
+  function curves() {
+    const idx = new Uint32Array(N);
+    for (let i = 0; i < N; i++) idx[i] = i;
+    idx.sort((i, j) => scores[j] - scores[i]);
+
+    let totalPos = 0;
+    for (let i = 0; i < N; i++) totalPos += labels[i];
+    const totalNeg = N - totalPos;
+
+    let TP=0, FP=0;
+
+    const rocX = [0], rocY = [0];  // FPR, TPR
+    const prX  = [0], prY  = [1];  // Recall, Precision anchor
+
+    let i = 0;
+    while (i < N) {
+      const s = scores[idx[i]];
+      let j = i;
+      while (j < N && scores[idx[j]] === s) {
+        const y = labels[idx[j]];
+        if (y === 1) TP++; else FP++;
+        j++;
+      }
+      i = j;
+
+      const TPR = (totalPos === 0) ? 0 : TP / totalPos;
+      const FPR = (totalNeg === 0) ? 0 : FP / totalNeg;
+
+      rocX.push(FPR); rocY.push(TPR);
+
+      const recall = TPR;
+      const precision = (TP + FP === 0) ? 1 : TP / (TP + FP);
+      prX.push(recall); prY.push(precision);
+    }
+
+    if (rocX[rocX.length - 1] !== 1 || rocY[rocY.length - 1] !== 1) {
+      rocX.push(1); rocY.push(1);
+    }
+
+    const auc = aucTrapezoid(rocX, rocY);
+    const ap = aucTrapezoid(prX, prY);
+
+    return {rocX, rocY, prX, prY, auc, ap};
+  }
+
+  function thresholdCurves() {
+    const idx = new Uint32Array(N);
+    for (let i = 0; i < N; i++) idx[i] = i;
+    idx.sort((i, j) => scores[j] - scores[i]);
+
+    let totalPos = 0;
+    for (let i = 0; i < N; i++) totalPos += labels[i];
+    const totalNeg = N - totalPos;
+
+    let TP = 0, FP = 0;
+    const K = 201;
+
+    const tAsc = new Array(K);
+    const sensAsc = new Array(K);
+    const specAsc = new Array(K);
+    const ppvAsc  = new Array(K);
+
+    let i = 0;
+    for (let k = 0; k < K; k++) {
+      const t = k / (K - 1); // 0..1 ascending (better for plotting)
+      tAsc[k] = t;
+
+      // We want counts for score >= t. Our idx is sorted desc, so easier to sweep from 1 -> 0.
+      // We'll instead compute using a descending sweep in a separate pass:
+      // To keep it simple + fast: map to descending threshold td = 1 - t, then reverse.
+    }
+
+    // Descending sweep
+    TP = 0; FP = 0; i = 0;
+    const tDesc = new Array(K);
+    const sensDesc = new Array(K);
+    const specDesc = new Array(K);
+    const ppvDesc  = new Array(K);
+
+    for (let k = 0; k < K; k++) {
+      const t = 1 - k / (K - 1); // 1..0
+      tDesc[k] = t;
+
+      while (i < N && scores[idx[i]] >= t) {
+        const y = labels[idx[i]];
+        if (y === 1) TP++; else FP++;
+        i++;
+      }
+
+      const FN = totalPos - TP;
+      const TN = totalNeg - FP;
+
+      sensDesc[k] = (totalPos === 0) ? NaN : TP / (TP + FN);
+      specDesc[k] = (totalNeg === 0) ? NaN : TN / (TN + FP);
+      ppvDesc[k]  = (TP + FP === 0) ? NaN : TP / (TP + FP);
+    }
+
+    // Reverse to ascending thresholds
+    for (let k = 0; k < K; k++) {
+      tAsc[k] = tDesc[K-1-k];
+      sensAsc[k] = sensDesc[K-1-k];
+      specAsc[k] = specDesc[K-1-k];
+      ppvAsc[k] = ppvDesc[K-1-k];
+    }
+
+    return {tAsc, sensAsc, specAsc, ppvAsc};
+  }
+
+  // ---------- Plotting ----------
+  function drawAxes(ctx, W, H, xLabel, yLabel) {
+    const padL=56, padR=18, padT=18, padB=44;
+    const x0=padL, y0=H-padB, x1=W-padR, y1=padT;
+
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0,0,W,H);
+
+    ctx.strokeStyle = "#e3e6ea";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5,0.5,W-1,H-1);
+
+    ctx.strokeStyle = "#eef0f3";
+    ctx.lineWidth = 1;
+    for (let k=1;k<=4;k++){
+      const x = x0 + (x1-x0)*k/5;
+      const y = y0 - (y0-y1)*k/5;
+      ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+    }
+
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x0,y1); ctx.stroke();
+
+    ctx.fillStyle = "#111";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let k=0;k<=5;k++){
+      const x = x0 + (x1-x0)*k/5;
+      ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+6); ctx.stroke();
+      ctx.fillText((k/5).toFixed(1), x, y0+8);
+    }
+    ctx.textAlign="right";
+    ctx.textBaseline="middle";
+    for (let k=0;k<=5;k++){
+      const y = y0 - (y0-y1)*k/5;
+      ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x0-6,y); ctx.stroke();
+      ctx.fillText((k/5).toFixed(1), x0-10, y);
+    }
+
+    ctx.fillStyle="#111";
+    ctx.font="13px system-ui, sans-serif";
+    ctx.textAlign="center";
+    ctx.textBaseline="bottom";
+    ctx.fillText(xLabel, (x0+x1)/2, H-10);
+
+    ctx.save();
+    ctx.translate(16, (y0+y1)/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign="center";
+    ctx.textBaseline="top";
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+
+    return {x0,y0,x1,y1};
+  }
+
+  function drawCurve(ctx, box, xs, ys, style="solid") {
+    const {x0,y0,x1,y1} = box;
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 2;
+    if (style === "dash") ctx.setLineDash([8,6]);
+    else if (style === "dot") ctx.setLineDash([2,6]);
+    else ctx.setLineDash([]);
+
+    ctx.beginPath();
+    for (let i=0;i<xs.length;i++){
+      const x = x0 + (x1-x0)*xs[i];
+      const y = y0 - (y0-y1)*ys[i];
+      if (i===0) ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawPoint(ctx, box, x, y) {
+    const {x0,y0,x1,y1} = box;
+    const px = x0 + (x1-x0)*x;
+    const py = y0 - (y0-y1)*y;
+    ctx.fillStyle = "#111";
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, 2*Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawDiagonal(ctx, box) {
+    const {x0,y0,x1,y1} = box;
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawLegend(ctx, items) {
+    const x = 70, y = 28;
+    ctx.save();
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+
+    let yy = y;
+    for (const it of items) {
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 2;
+      if (it.style === "dash") ctx.setLineDash([8,6]);
+      else if (it.style === "dot") ctx.setLineDash([2,6]);
+      else ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.moveTo(x, yy);
+      ctx.lineTo(x+36, yy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#111";
+      ctx.fillText(it.label, x+44, yy);
+      yy += 18;
+    }
+    ctx.restore();
+  }
+
+  // ---------- UI ----------
+  const els = {
+    p: document.getElementById("p"),
+    t: document.getElementById("t"),
+    sep: document.getElementById("sep"),
+    noise: document.getElementById("noise"),
+    seed: document.getElementById("seed"),
+    pOut: document.getElementById("pOut"),
+    pPct: document.getElementById("pPct"),
+    tOut: document.getElementById("tOut"),
+    tPill: document.getElementById("tPill"),
+    sepOut: document.getElementById("sepOut"),
+    noiseOut: document.getElementById("noiseOut"),
+    seedOut: document.getElementById("seedOut"),
+    regen: document.getElementById("regen"),
+    resetT: document.getElementById("resetT"),
+    TP: document.getElementById("TP"),
+    FP: document.getElementById("FP"),
+    TN: document.getElementById("TN"),
+    FN: document.getElementById("FN"),
+    kpis: document.getElementById("kpis"),
+    roc: document.getElementById("roc"),
+    pr: document.getElementById("pr"),
+    thr: document.getElementById("thr"),
+    aucText: document.getElementById("aucText"),
+    apText: document.getElementById("apText"),
+    thrText: document.getElementById("thrText"),
+    notes: document.getElementById("notes")
+  };
+
+  const state = {
+    cachedCurves: null,
+    cachedThrCurves: null,
+    cachedKey: "",
+    lastDrawToken: 0
+  };
+
+  function controlKey() {
+    return [els.p.value, els.sep.value, els.noise.value, els.seed.value].join("|");
+  }
+
+  function updateControlReadouts() {
+    const p = +els.p.value;
+    const t = +els.t.value;
+    els.pOut.textContent = `p = ${p/100}`;
+    els.pPct.textContent = `${p}%`;
+    els.tOut.textContent = `t = ${(t/100).toFixed(2)}`;
+    els.tPill.textContent = `${(t/100).toFixed(2)}`;
+    els.sepOut.textContent = `sep = ${(+els.sep.value/400).toFixed(2)}`;
+    els.noiseOut.textContent = `noise = ${+els.noise.value}`;
+    els.seedOut.textContent = `seed = ${+els.seed.value}`;
+  }
+
+  function kpiCard(name, value, formula) {
+    const div = document.createElement("div");
+    div.className = "kpi";
+    div.innerHTML = `
+      <div class="name">${name}</div>
+      <div class="value">${value}</div>
+      <div class="formula">${formula}</div>
+    `;
+    return div;
+  }
+
+  function renderKPIs(m) {
+    els.kpis.innerHTML = "";
+    els.kpis.appendChild(kpiCard("Sensitivity (Recall, TPR)", fmt(m.sensitivity, 4), "TPR = TP / (TP + FN)"));
+    els.kpis.appendChild(kpiCard("Specificity (TNR)", fmt(m.specificity, 4), "TNR = TN / (TN + FP)"));
+    els.kpis.appendChild(kpiCard("Precision (PPV)", fmt(m.precision, 4), "PPV = TP / (TP + FP)"));
+    els.kpis.appendChild(kpiCard("F1 score", fmt(m.f1, 4), "F1 = 2·(PPV·TPR)/(PPV + TPR)"));
+    els.kpis.appendChild(kpiCard("Accuracy", fmt(m.accuracy, 4), "Acc = (TP + TN) / N"));
+    els.kpis.appendChild(kpiCard("False positive rate (FPR)", fmt(m.fpr, 4), "FPR = FP / (FP + TN)"));
+    els.kpis.appendChild(kpiCard("Prevalence", fmt(m.P/(m.P+m.Nn), 4), "Prev = (TP+FN)/N"));
+    els.kpis.appendChild(kpiCard("Predicted positive rate", fmt((m.P*m.sensitivity + m.Nn*(1-m.specificity)) / (m.P+m.Nn), 4),
+      "P(Ŷ=1) = (TP+FP)/N"));
+  }
+
+  function renderConfusion(cm) {
+    els.TP.textContent = cm.TP.toLocaleString();
+    els.FP.textContent = cm.FP.toLocaleString();
+    els.TN.textContent = cm.TN.toLocaleString();
+    els.FN.textContent = cm.FN.toLocaleString();
+  }
+
+  function renderNotes(m) {
+    const prev = m.P/(m.P+m.Nn);
+    const t = (+els.t.value)/100;
+    els.notes.innerHTML = `
+      <div style="margin:0 0 8px">Prevalence is ${(prev*100).toFixed(1)}%. Precision (PPV) depends strongly on prevalence, even if sensitivity/specificity stay similar.</div>
+      <div style="margin:0 0 8px">At t=${t.toFixed(2)}: TPR=${fmt(m.sensitivity,3)}, TNR=${fmt(m.specificity,3)}, PPV=${fmt(m.precision,3)}.</div>
+      <div>Lowering t usually increases TPR and decreases TNR; PPV can go either way depending on prevalence and score separation.</div>
+    `;
+  }
+
+  function ensureCachesUpToDate() {
+    const key = controlKey();
+    if (key !== state.cachedKey) {
+      state.cachedCurves = curves();
+      state.cachedThrCurves = thresholdCurves();
+      state.cachedKey = key;
+    }
+  }
+
+  function drawAllPlots(m) {
+    ensureCachesUpToDate();
+    const c = state.cachedCurves;
+    const th = state.cachedThrCurves;
+
+    // Size canvases consistently: choose aspect ratios that look good
+    const rocFit = fitCanvas(els.roc, 16/9, 360);
+    const prFit  = fitCanvas(els.pr,  16/9, 360);
+    const thrFit = fitCanvas(els.thr, 2.35, 360); // wider so it doesn't look "tall"
+
+    // ROC
+    {
+      const ctx = rocFit.ctx;
+      const box = drawAxes(ctx, rocFit.W, rocFit.H, "FPR", "TPR");
+      drawDiagonal(ctx, box);
+      drawCurve(ctx, box, c.rocX, c.rocY, "solid");
+      drawPoint(ctx, box, m.fpr, m.sensitivity);
+      els.aucText.textContent = `AUC ≈ ${fmt(c.auc, 4)} (trapezoid over empirical ROC).`;
+    }
+
+    // PR
+    {
+      const ctx = prFit.ctx;
+      const box = drawAxes(ctx, prFit.W, prFit.H, "Recall (TPR)", "Precision (PPV)");
+      drawCurve(ctx, box, c.prX, c.prY, "solid");
+      drawPoint(ctx, box, m.sensitivity, isFinite(m.precision) ? m.precision : 1);
+      els.apText.textContent = `Average Precision ≈ ${fmt(c.ap, 4)}.`;
+    }
+
+    // Threshold curves
+    {
+      const ctx = thrFit.ctx;
+      const box = drawAxes(ctx, thrFit.W, thrFit.H, "Threshold t", "Metric value");
+
+      drawCurve(ctx, box, th.tAsc, th.sensAsc, "solid"); // Sensitivity
+      drawCurve(ctx, box, th.tAsc, th.specAsc, "dash");  // Specificity
+      drawCurve(ctx, box, th.tAsc, th.ppvAsc,  "dot");   // PPV
+
+      // current threshold marker (use exact grid index since tAsc is uniform)
+      const t = (+els.t.value)/100;
+      const K = th.tAsc.length;
+      const k = Math.max(0, Math.min(K-1, Math.round(t * (K-1))));
+      drawPoint(ctx, box, t, th.sensAsc[k]);
+      drawPoint(ctx, box, t, th.specAsc[k]);
+      drawPoint(ctx, box, t, isFinite(th.ppvAsc[k]) ? th.ppvAsc[k] : 1);
+
+      drawLegend(ctx, [
+        {label:"Sensitivity (TPR)", style:"solid"},
+        {label:"Specificity (TNR)", style:"dash"},
+        {label:"PPV (Precision)", style:"dot"}
+      ]);
+
+      els.thrText.textContent = `At t=${t.toFixed(2)}: Sens=${fmt(m.sensitivity,4)}, Spec=${fmt(m.specificity,4)}, PPV=${fmt(m.precision,4)}.`;
+    }
+  }
+
+  function updateEverything(regen=false) {
+    updateControlReadouts();
+    if (regen) { generatePopulation(); state.cachedKey = ""; }
+
+    const t = (+els.t.value) / 100;
+    const cm = confusionAtThreshold(t);
+    const m = metricsFromCM(cm);
+
+    renderConfusion(cm);
+    renderKPIs(m);
+    renderNotes(m);
+    drawAllPlots(m);
+  }
+
+  // ---------- Wiring ----------
+  ["p","sep","noise","seed"].forEach(id => {
+    els[id].addEventListener("input", () => updateEverything(true));
+  });
+  els.t.addEventListener("input", () => updateEverything(false));
+  els.regen.addEventListener("click", () => updateEverything(true));
+  els.resetT.addEventListener("click", () => { els.t.value = 50; updateEverything(false); });
+
+  // ✅ Redraw on resize without regenerating the population
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => updateEverything(false), 80);
+  });
+
+  // Initial
+  generatePopulation();
+  updateEverything(false);
+})();
+</script>
+<footer style="margin-top:18px; font-size:12px; color:#666;">
+  (c) Fayyaz Minhas
+</footer>
+</body>
+</html>
