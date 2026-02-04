@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Understanding Matrix as operators over Vectors and Eigen Vectors</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; padding: 18px; background: #0b0f14; color: #e6edf3; }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .row { display: grid; grid-template-columns: 460px 1fr; gap: 16px; align-items: start; }
+    .panel { background: #101826; border: 1px solid #22324a; border-radius: 12px; padding: 12px; }
+    .panel h2 { font-size: 14px; margin: 0 0 8px; color: #b7c6dc; }
+    .grid2x2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    label { display: block; font-size: 12px; color: #b7c6dc; margin-bottom: 4px; }
+    input[type="number"]{
+      width: 100%; box-sizing: border-box;
+      background: #0b1220; color: #e6edf3;
+      border: 1px solid #22324a; border-radius: 10px;
+      padding: 8px 10px; font-size: 14px;
+      outline: none;
+    }
+    input[type="number"]:focus{ border-color: #3a7bd5; }
+    .btnrow { display:flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    button {
+      background: #0b1220; color: #e6edf3;
+      border: 1px solid #22324a; border-radius: 10px;
+      padding: 8px 10px; cursor: pointer; font-size: 13px;
+    }
+    button:hover { border-color: #3a7bd5; }
+    canvas {
+      width: 100%; height: 540px;
+      background: #070b10;
+      border: 1px solid #22324a;
+      border-radius: 12px;
+      display:block;
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .small { font-size: 12px; color:#b7c6dc; line-height: 1.35; }
+    .pill {
+      margin-top: 10px;
+      background:#0b1220; border:1px solid #22324a; border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .warn { color: #ffd479; margin-top: 8px; }
+    .ok { color: #b7f5c7; margin-top: 8px; }
+    .legend {
+      margin-top: 10px;
+      background:#0b1220; border:1px solid #22324a; border-radius: 12px;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: #b7c6dc;
+    }
+    .key { display:flex; gap: 10px; align-items:center; }
+    .swatch { width: 34px; height: 0; border-top-width: 3px; border-top-style: solid; border-radius: 2px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display:inline-block; margin-right: 6px; }
+    .checkbox { display:flex; gap: 8px; align-items:center; margin-top: 10px; color:#b7c6dc; font-size: 13px;}
+    footer { margin-top: 14px; text-align: center; color: #6e86a6; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Understanding Matrix as operators over Vectors and Eigen Vectors</h1>
+
+  <div class="row">
+    <div class="panel">
+      <h2>What to do</h2>
+      <div class="small">
+        <ol style="margin: 0; padding-left: 18px;">
+          <li><b>Click</b> anywhere on the canvas to choose a point <span class="mono">p</span> (blue). <b>Drag</b> the blue point to move it.</li>
+          <li>Edit the matrix <span class="mono">T</span> below. The transformed point updates as <span class="mono">q = T p</span> (red).</li>
+          <li>Eigenvector <b>directions</b> (if real) are shown as <b>dashed lines</b> through the origin.</li>
+          <li>Enable “Show eigenvalues/vectors” to display the computed <span class="mono">λ</span> and <span class="mono">v</span>.</li>
+        </ol>
+      </div>
+
+      <h2 style="margin-top:12px;">Matrix T (2×2)</h2>
+      <div class="grid2x2">
+        <div>
+          <label for="a11">t11</label>
+          <input id="a11" type="number" step="0.1" value="3">
+        </div>
+        <div>
+          <label for="a12">t12</label>
+          <input id="a12" type="number" step="0.1" value="1">
+        </div>
+        <div>
+          <label for="a21">t21</label>
+          <input id="a21" type="number" step="0.1" value="0">
+        </div>
+        <div>
+          <label for="a22">t22</label>
+          <input id="a22" type="number" step="0.1" value="2">
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button id="presetScale">2I</button>
+        <button id="presetDiag">diag(3, -0.5)</button>
+        <button id="presetShear">[[3,1],[0,2]]</button>
+        <button id="random">Random</button>
+        <button id="randomReal">Random (real eigenvectors)</button>
+        <button id="resetPoint">Reset point</button>
+      </div>
+
+      <div class="checkbox">
+        <input id="showEigenValues" type="checkbox">
+        <label for="showEigenValues" style="margin:0;">Show eigenvalues/vectors (default off)</label>
+      </div>
+
+      <div class="legend">
+        <div><b>Legend</b></div>
+        <div class="key">
+          <span class="dot" style="background:#79c0ff;"></span>
+          <span class="swatch" style="border-top-color:#79c0ff;"></span>
+          <span>Blue: selected vector/point <span class="mono">p</span> (arrow from origin)</span>
+        </div>
+        <div class="key">
+          <span class="dot" style="background:#ff7b72;"></span>
+          <span class="swatch" style="border-top-color:#ff7b72;"></span>
+          <span>Red: transformed vector/point <span class="mono">q = T p</span> (arrow from origin)</span>
+        </div>
+        <div class="key">
+          <span class="swatch" style="border-top-color:#d2a8ff; border-top-style:dashed; border-top-width:3px;"></span>
+          <span>Dashed lines: eigenvector directions (if real)</span>
+        </div>
+      </div>
+
+      <h2 style="margin-top:12px;">Key math (2×2)</h2>
+      <div class="pill mono small">
+        Transformation: q = T p<br/>
+        Eigenvector equation: T v = λ v  (v ≠ 0)<br/>
+        Characteristic polynomial: λ² − tr(T) λ + det(T) = 0<br/>
+        where tr(T)=t11+t22, det(T)=t11·t22 − t12·t21
+      </div>
+
+      <div class="pill mono" id="readout"></div>
+      <div class="warn small" id="warn"></div>
+      <div class="ok small" id="ok"></div>
+
+      <div class="small" style="margin-top:10px;">
+        Fixed view: world coordinates are always <span class="mono">[-4,4]×[-4,4]</span> (no auto-rescaling).
+      </div>
+    </div>
+
+    <div>
+      <canvas id="c"></canvas>
+      <div class="small" style="margin-top:10px;">
+        If eigenvectors are not shown, it usually means the matrix has <b>complex</b> eigenvectors (e.g., rotation-like). Use
+        <b>Random (real eigenvectors)</b> or adjust <span class="mono">T</span> until they appear.
+      </div>
+    </div>
+  </div>
+
+  <footer>(c) Fayyaz Minhas</footer>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width  = Math.floor(rect.width  * devicePixelRatio);
+    canvas.height = Math.floor(rect.height * devicePixelRatio);
+  }
+  window.addEventListener('resize', () => { resizeCanvas(); draw(); });
+
+  // ---- FIXED WORLD SCALE ----
+  const W = 4; // fixed: [-W,W]×[-W,W]
+
+  function worldToScreen(x, y) {
+    const cw = canvas.width, ch = canvas.height;
+    const sx = (x / (2*W) + 0.5) * cw;
+    const sy = (0.5 - y / (2*W)) * ch;
+    return [sx, sy];
+  }
+  function screenToWorld(sx, sy) {
+    const cw = canvas.width, ch = canvas.height;
+    const x = ((sx / cw) - 0.5) * (2*W);
+    const y = (0.5 - (sy / ch)) * (2*W);
+    return [x, y];
+  }
+
+  // ---- UI ----
+  const a11 = document.getElementById('a11');
+  const a12 = document.getElementById('a12');
+  const a21 = document.getElementById('a21');
+  const a22 = document.getElementById('a22');
+  const showEigenValues = document.getElementById('showEigenValues');
+  const readout = document.getElementById('readout');
+  const warn = document.getElementById('warn');
+  const ok = document.getElementById('ok');
+
+  function getT() {
+    return [
+      [parseFloat(a11.value), parseFloat(a12.value)],
+      [parseFloat(a21.value), parseFloat(a22.value)]
+    ];
+  }
+  function mulMatVec(T, v) {
+    return [
+      T[0][0]*v[0] + T[0][1]*v[1],
+      T[1][0]*v[0] + T[1][1]*v[1]
+    ];
+  }
+
+  // ---- 2x2 real eigen info (closed form) ----
+  function eigen2x2Real(T) {
+    const a = T[0][0], b = T[0][1], c = T[1][0], d = T[1][1];
+    const tr = a + d;
+    const det = a*d - b*c;
+    const disc = tr*tr - 4*det;
+    if (disc < 0) return { real: false, disc, tr, det };
+
+    const s = Math.sqrt(disc);
+    const l1 = 0.5*(tr + s);
+    const l2 = 0.5*(tr - s);
+
+    const eps = 1e-10;
+    const degAllDir = (Math.abs(disc) < 1e-12 && Math.abs(b) < eps && Math.abs(c) < eps && Math.abs(a-d) < eps);
+    if (degAllDir) return { real: true, degenerateAllDirections: true, lambdas:[l1,l2], vecs:[], disc, tr, det };
+
+    function eigenvectorFor(lambda) {
+      const p = a - lambda, q = b, r = c, s2 = d - lambda;
+      let v;
+      if (Math.abs(q) > Math.abs(r) && Math.abs(q) > eps) {
+        v = [1, -p/q];
+      } else if (Math.abs(r) > eps) {
+        v = [-s2/r, 1];
+      } else {
+        v = (Math.abs(p) < Math.abs(s2)) ? [1,0] : [0,1];
+      }
+      const n = Math.hypot(v[0], v[1]) || 1;
+      return [v[0]/n, v[1]/n];
+    }
+    return {
+      real: true,
+      degenerateAllDirections: false,
+      lambdas:[l1,l2],
+      vecs:[eigenvectorFor(l1), eigenvectorFor(l2)],
+      disc, tr, det
+    };
+  }
+
+  // ---- Interaction: click to set p, drag p ----
+  let p = [1.2, 0.8];
+  let dragging = false;
+
+  function dist2(a, b) { const dx=a[0]-b[0], dy=a[1]-b[1]; return dx*dx+dy*dy; }
+
+  canvas.addEventListener('pointerdown', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (ev.clientX - rect.left) * devicePixelRatio;
+    const sy = (ev.clientY - rect.top) * devicePixelRatio;
+
+    const [px, py] = worldToScreen(p[0], p[1]);
+    const near = dist2([sx,sy],[px,py]) < (14*devicePixelRatio)**2;
+
+    if (near) dragging = true;
+    else { p = screenToWorld(sx, sy); draw(); }
+  });
+  window.addEventListener('pointermove', (ev) => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = (ev.clientX - rect.left) * devicePixelRatio;
+    const sy = (ev.clientY - rect.top) * devicePixelRatio;
+    p = screenToWorld(sx, sy);
+    draw();
+  });
+  window.addEventListener('pointerup', () => { dragging = false; });
+
+  // ---- Drawing ----
+  function clear() {
+    ctx.fillStyle = '#070b10';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+
+  function drawGridAndAxes() {
+    ctx.lineWidth = 1 * devicePixelRatio;
+    ctx.strokeStyle = '#0e1a2a';
+
+    const step = 1;
+    for (let x = -W; x <= W; x += step) {
+      const [sx1, sy1] = worldToScreen(x, -W);
+      const [sx2, sy2] = worldToScreen(x,  W);
+      ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+    }
+    for (let y = -W; y <= W; y += step) {
+      const [sx1, sy1] = worldToScreen(-W, y);
+      const [sx2, sy2] = worldToScreen( W, y);
+      ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#22324a';
+    ctx.lineWidth = 2 * devicePixelRatio;
+
+    let [x1,y1] = worldToScreen(-W,0);
+    let [x2,y2] = worldToScreen( W,0);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+
+    [x1,y1] = worldToScreen(0,-W);
+    [x2,y2] = worldToScreen(0, W);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+
+  function arrow(from, to, color, widthPx=3) {
+    const [x1,y1]=from, [x2,y2]=to;
+    const dx=x2-x1, dy=y2-y1;
+    const L=Math.hypot(dx,dy);
+    if (L < 1e-6) return;
+
+    ctx.strokeStyle=color;
+    ctx.fillStyle=color;
+    ctx.lineWidth=widthPx*devicePixelRatio;
+
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+
+    const ux=dx/L, uy=dy/L;
+    const head=10*devicePixelRatio, wing=6*devicePixelRatio;
+    const hx=x2-head*ux, hy=y2-head*uy;
+
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(hx + wing*(-uy), hy + wing*(ux));
+    ctx.lineTo(hx - wing*(-uy), hy - wing*(ux));
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawPoint(world, color, label) {
+    const [sx,sy]=worldToScreen(world[0], world[1]);
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.arc(sx,sy,6*devicePixelRatio,0,Math.PI*2); ctx.fill();
+
+    ctx.font = `${12*devicePixelRatio}px ui-monospace, Menlo, Consolas, monospace`;
+    ctx.fillStyle = '#e6edf3';
+    ctx.fillText(label, sx + 8*devicePixelRatio, sy - 8*devicePixelRatio);
+  }
+
+  function dashedLineThroughOrigin(dir, color) {
+    const vx = dir[0], vy = dir[1];
+    const eps = 1e-12;
+
+    const tx = (Math.abs(vx) > eps) ? (W / Math.abs(vx)) : Infinity;
+    const ty = (Math.abs(vy) > eps) ? (W / Math.abs(vy)) : Infinity;
+    const tmax = Math.min(tx, ty);
+    if (!isFinite(tmax)) return;
+
+    const p1 = [-tmax*vx, -tmax*vy];
+    const p2 = [ tmax*vx,  tmax*vy];
+
+    const [x1,y1]=worldToScreen(p1[0], p1[1]);
+    const [x2,y2]=worldToScreen(p2[0], p2[1]);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.setLineDash([8*devicePixelRatio, 8*devicePixelRatio]);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function maybeDrawEigen(T) {
+    // Always draw eigen DIRECTIONS if real (as requested); values shown only if checkbox enabled.
+    const eig = eigen2x2Real(T);
+
+    if (!eig.real) {
+      // Prompt user clearly (this is the "fix or prompt" part).
+      const disc = eig.disc;
+      warn.textContent =
+        `No real eigenvectors for this T (discriminant < 0 ⇒ complex eigenvectors). ` +
+        `Try “Random (real eigenvectors)” or adjust entries (e.g., make T symmetric: t12≈t21).`;
+      return { eigenText: "" };
+    }
+
+    warn.textContent = "";
+
+    if (eig.degenerateAllDirections) {
+      ok.textContent = `Degenerate case: T = λI. Every direction is an eigenvector (so dashed lines are not unique).`;
+      return { eigenText: showEigenValues.checked ? `λ=${fmt(eig.lambdas[0])} (double), any v≠0 works` : "" };
+    } else {
+      ok.textContent = "";
+    }
+
+    const [v1, v2] = eig.vecs;
+    // Draw both eigenvector directions as dashed lines
+    dashedLineThroughOrigin(v1, '#d2a8ff');
+    dashedLineThroughOrigin(v2, '#d2a8ff');
+
+    if (!showEigenValues.checked) return { eigenText: "" };
+
+    const [l1,l2] = eig.lambdas;
+    return {
+      eigenText:
+        `λ1=${fmt(l1)} v1=[${fmt(v1[0])}, ${fmt(v1[1])}]   ` +
+        `λ2=${fmt(l2)} v2=[${fmt(v2[0])}, ${fmt(v2[1])}]`
+    };
+  }
+
+  function fmt(x) {
+    return (Math.abs(x) < 1e-10 ? "0" : x.toFixed(4));
+  }
+
+  function draw() {
+    const T = getT();
+    const q = mulMatVec(T, p);
+
+    clear();
+    drawGridAndAxes();
+
+    const { eigenText } = maybeDrawEigen(T);
+
+    // p (blue) and q (red)
+    arrow(worldToScreen(0,0), worldToScreen(p[0], p[1]), '#79c0ff', 3);
+    arrow(worldToScreen(0,0), worldToScreen(q[0], q[1]), '#ff7b72', 3);
+    drawPoint(p, '#79c0ff', 'p');
+    drawPoint(q, '#ff7b72', 'q');
+
+    const base = `p=[${fmt(p[0])}, ${fmt(p[1])}]   q=Tp=[${fmt(q[0])}, ${fmt(q[1])}]`;
+    readout.textContent = eigenText ? (base + "   |   " + eigenText) : base;
+
+    // Fixed-scale warning if q out of view
+    const out = (Math.abs(q[0]) > W || Math.abs(q[1]) > W);
+    if (out) {
+      warn.textContent = warn.textContent
+        ? warn.textContent + "  Also: q is outside the visible range (fixed scale)."
+        : "q is outside the visible range (fixed scale).";
+    }
+  }
+
+  function setMatrix(M) {
+    a11.value = M[0][0]; a12.value = M[0][1];
+    a21.value = M[1][0]; a22.value = M[1][1];
+    draw();
+  }
+
+  // ---- Buttons ----
+  document.getElementById('presetScale').addEventListener('click', () => setMatrix([[2,0],[0,2]]));
+  document.getElementById('presetDiag').addEventListener('click', () => setMatrix([[3,0],[0,-0.5]]));
+  document.getElementById('presetShear').addEventListener('click', () => setMatrix([[3,1],[0,2]]));
+
+  document.getElementById('random').addEventListener('click', () => {
+    const r = () => (Math.random()*4 - 2).toFixed(2);
+    setMatrix([[r(), r()],[r(), r()]]);
+  });
+
+  // Random matrix guaranteed to have real eigenvalues by constructing a symmetric matrix:
+  // symmetric 2x2 matrices always have real eigenvalues/eigenvectors.
+  document.getElementById('randomReal').addEventListener('click', () => {
+    const r = () => (Math.random()*4 - 2);
+    const a = r(), d = r(), b = r();
+    setMatrix([[a.toFixed(2), b.toFixed(2)],[b.toFixed(2), d.toFixed(2)]]);
+  });
+
+  document.getElementById('resetPoint').addEventListener('click', () => {
+    p = [1.2, 0.8];
+    draw();
+  });
+
+  [a11,a12,a21,a22,showEigenValues].forEach(el => {
+    el.addEventListener('input', draw);
+    el.addEventListener('change', draw);
+  });
+
+  // ---- Start ----
+  resizeCanvas();
+  draw();
+})();
+</script>
+</body>
+</html>
