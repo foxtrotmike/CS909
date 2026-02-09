@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Max Area Rectangle with Fixed Perimeter (L=1) — Lagrange Multipliers Demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      border: 1px solid rgba(127,127,127,0.35);
+      border-radius: 14px;
+      padding: 12px 12px 10px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+      background: rgba(127,127,127,0.06);
+    }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    label { font-size: 13px; opacity: 0.9; }
+    input[type="range"] { width: 100%; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .big { font-size: 16px; }
+    .muted { opacity: 0.8; }
+    .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+    .kpi .box { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.05); }
+    .kpi .box .t { font-size: 12px; opacity: 0.85; margin-bottom: 4px; }
+    .kpi .box .v { font-size: 16px; font-weight: 600; }
+    canvas { width: 100%; height: auto; border-radius: 12px; border: 1px solid rgba(127,127,127,0.35); background: rgba(255,255,255,0.05); }
+    .legend { font-size: 12px; opacity: 0.85; margin-top: 8px; line-height: 1.35; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.08); margin-right: 6px; }
+    .btnrow { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
+    button {
+      border-radius: 12px; border: 1px solid rgba(127,127,127,0.35);
+      padding: 8px 10px; cursor: pointer; background: rgba(127,127,127,0.10);
+    }
+    button:hover { background: rgba(127,127,127,0.16); }
+    .note { font-size: 12px; opacity: 0.85; margin-top: 10px; }
+
+    .threeGrid { display:grid; grid-template-columns: 1fr 1fr 1.2fr; gap:16px; }
+    @media (max-width: 1100px) { .threeGrid { grid-template-columns: 1fr; } }
+
+    /* Plotly container */
+    #plotly3d {
+      width: 100%;
+      height: 360px;
+      border-radius: 12px;
+      border: 1px solid rgba(127,127,127,0.35);
+      background: rgba(255,255,255,0.05);
+      overflow: hidden;
+    }
+  </style>
+
+  <!-- Plotly (CDN) -->
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+</head>
+
+<body>
+  <h1>Maximizing Rectangle Area with Fixed Perimeter L = 1 (connect to Lagrange multipliers)</h1>
+
+  <div class="grid">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <div class="muted" style="font-size:12px;">Constraint</div>
+          <div class="mono big">2(l + w) = L = 1</div>
+          <div class="mono muted">⇒ w = 0.5 − l</div>
+        </div>
+        <div class="pill mono">A = l · w</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label for="lRange">Choose l (w is computed):</label>
+        <input id="lRange" type="range" min="0.0001" max="0.4999" step="0.0001" value="0.25" />
+        <div class="row" style="justify-content:space-between;">
+          <div class="mono muted">0</div>
+          <div class="mono muted">0.5</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label for="aRange">Choose α (Lagrange multiplier):</label>
+        <input id="aRange" type="range" min="-0.5" max="0.5" step="0.0005" value="0.125" />
+        <div class="row" style="justify-content:space-between;">
+          <div class="mono muted">-0.5</div>
+          <div class="mono muted">0.5</div>
+        </div>
+      </div>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="t">l</div>
+          <div class="v mono" id="lVal">0.2500</div>
+        </div>
+        <div class="box">
+          <div class="t">w = 0.5 − l</div>
+          <div class="v mono" id="wVal">0.2500</div>
+        </div>
+        <div class="box">
+          <div class="t">Area A = l·w</div>
+          <div class="v mono" id="aVal">0.062500</div>
+        </div>
+        <div class="box">
+          <div class="t">Maximum (under L=1)</div>
+          <div class="v mono" id="amaxVal">0.062500 at l=w=0.25</div>
+        </div>
+
+        <div class="box">
+          <div class="t">α</div>
+          <div class="v mono" id="alphaVal">0.1250</div>
+        </div>
+        <div class="box">
+          <div class="t">D(l,w,α)=lw−α(2(l+w)−1)</div>
+          <div class="v mono" id="DVal">0.062500</div>
+        </div>
+
+        <div class="box">
+          <div class="t">∂D/∂l = w − 2α</div>
+          <div class="v mono" id="dDl">0.0000</div>
+        </div>
+        <div class="box">
+          <div class="t">∂D/∂w = l − 2α</div>
+          <div class="v mono" id="dDw">0.0000</div>
+        </div>
+        <div class="box">
+          <div class="t">∂D/∂α = 2(l+w) − 1</div>
+          <div class="v mono" id="dDa">0.0000</div>
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button id="toMaxBtn" type="button">Jump to optimum (square)</button>
+        <button id="randomBtn" type="button">Random l</button>
+        <button id="alphaOptBtn" type="button">Set α to optimum (1/8)</button>
+      </div>
+
+      <div class="card" style="margin-top:12px; background: rgba(127,127,127,0.04);">
+        <div class="muted" style="font-size:12px; margin-bottom:6px;">Lagrange multipliers sketch (text-math)</div>
+        <div class="mono" style="font-size:13px; line-height:1.45;">
+          Maximize f(l,w) = l w<br/>
+          subject to g(l,w) = 2(l+w) − 1 = 0<br/><br/>
+          Lagrangian: D(l,w,α) = l w − α g(l,w)<br/><br/>
+          (∂/∂l): w − 2α = 0<br/>
+          (∂/∂w): l − 2α = 0<br/>
+          (∂/∂α): 2(l+w) − 1 = 0<br/><br/>
+          ⇒ l = w = 0.25, α = 0.125
+        </div>
+      </div>
+
+      <div class="note">
+        Interpretation: along the constraint line (w = 0.5 − l), the area becomes
+        <span class="mono">A(l) = l(0.5 − l)</span>, a concave parabola with its peak at <span class="mono">l = 0.25</span>.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+        <div class="muted" style="font-size:12px;">
+          Rectangle and area curve, plus a 3D surface of D(l,w,α) (surface is over (l,w) for current α).
+        </div>
+        <div class="mono muted">(c) Fayyaz Minhas</div>
+      </div>
+
+      <div class="threeGrid">
+        <div>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Rectangle view</div>
+          <canvas id="rectCanvas" width="520" height="360"></canvas>
+          <div class="legend">
+            <span class="pill mono">Current</span> shows chosen <span class="mono">l</span>, computed <span class="mono">w</span>, and area.
+          </div>
+        </div>
+
+        <div>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Area curve A(l) = l(0.5 − l)</div>
+          <canvas id="plotCanvas" width="520" height="360"></canvas>
+          <div class="legend">
+            <div><span class="pill mono">Dot</span> your current (l, A).</div>
+            <div><span class="pill mono">Star</span> the maximum at l = 0.25.</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">3D plot of D(l,w,α) for current α</div>
+          <div id="plotly3d"></div>
+          <div class="legend">
+            Surface: D as a function of (l,w) with α fixed. Point: current (l,w,D).
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Fixed perimeter
+    const L = 1.0;
+    const half = L / 2; // l + w = 0.5
+
+    const lRange = document.getElementById('lRange');
+    const aRange = document.getElementById('aRange');
+
+    const lVal = document.getElementById('lVal');
+    const wVal = document.getElementById('wVal');
+    const aVal = document.getElementById('aVal');
+    const amaxVal = document.getElementById('amaxVal');
+    const alphaVal = document.getElementById('alphaVal');
+
+    const DVal = document.getElementById('DVal');
+    const dDl = document.getElementById('dDl');
+    const dDw = document.getElementById('dDw');
+    const dDa = document.getElementById('dDa');
+
+    const rectCanvas = document.getElementById('rectCanvas');
+    const plotCanvas = document.getElementById('plotCanvas');
+    const rectCtx = rectCanvas.getContext('2d');
+    const plotCtx = plotCanvas.getContext('2d');
+
+    const toMaxBtn = document.getElementById('toMaxBtn');
+    const randomBtn = document.getElementById('randomBtn');
+    const alphaOptBtn = document.getElementById('alphaOptBtn');
+
+    function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+    function compute(l, alpha) {
+      const w = half - l;
+      const A = l * w;
+      const g = 2 * (l + w) - 1; // = 0 by construction when w=0.5-l
+      const D = A - alpha * g;
+
+      const dDdl = w - 2 * alpha;
+      const dDdw = l - 2 * alpha;
+      const dDda = 2 * (l + w) - 1;
+
+      return { l, w, A, alpha, D, dDdl, dDdw, dDda };
+    }
+
+    // Optimum
+    const lStar = half / 2;      // 0.25
+    const AStar = lStar * lStar; // 0.0625
+    const alphaStar = 1/8;       // 0.125
+
+    amaxVal.textContent = `${AStar.toFixed(6)} at l=w=${lStar.toFixed(2)}`;
+
+    function clear(ctx, W, H) {
+      ctx.clearRect(0, 0, W, H);
+    }
+
+    function drawRectView(state) {
+      const W = rectCanvas.width, H = rectCanvas.height;
+      clear(rectCtx, W, H);
+
+      const pad = 36;
+      const maxDrawW = W - 2 * pad;
+      const maxDrawH = H - 2 * pad;
+
+      const l = Math.max(state.l, 1e-9);
+      const w = Math.max(state.w, 1e-9);
+
+      const scale = Math.min(maxDrawW / l, maxDrawH / w);
+      const drawW = l * scale;
+      const drawH = w * scale;
+
+      const x0 = (W - drawW) / 2;
+      const y0 = (H - drawH) / 2;
+
+      rectCtx.save();
+      rectCtx.globalAlpha = 0.18;
+      const grid = 20;
+      rectCtx.beginPath();
+      for (let x = 0; x <= W; x += grid) { rectCtx.moveTo(x, 0); rectCtx.lineTo(x, H); }
+      for (let y = 0; y <= H; y += grid) { rectCtx.moveTo(0, y); rectCtx.lineTo(W, y); }
+      rectCtx.stroke();
+      rectCtx.restore();
+
+      rectCtx.save();
+      rectCtx.lineWidth = 2;
+      rectCtx.strokeRect(x0, y0, drawW, drawH);
+      rectCtx.restore();
+
+      rectCtx.save();
+      rectCtx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      rectCtx.globalAlpha = 0.95;
+      rectCtx.fillText(`l = ${state.l.toFixed(4)}`, x0, y0 - 10);
+      rectCtx.fillText(`w = ${state.w.toFixed(4)}`, x0, y0 + drawH + 20);
+      rectCtx.fillText(`A = l·w = ${state.A.toFixed(6)}`, x0, y0 + drawH + 40);
+      rectCtx.fillText(`α = ${state.alpha.toFixed(4)}`, x0, y0 + drawH + 60);
+      rectCtx.restore();
+    }
+
+    function drawAreaPlot(state) {
+      const W = plotCanvas.width, H = plotCanvas.height;
+      clear(plotCtx, W, H);
+
+      const padL = 46, padR = 18, padT = 18, padB = 40;
+      const xMin = 0, xMax = half;
+      const yMin = 0, yMax = AStar;
+
+      const xToPx = (x) => padL + (x - xMin) * (W - padL - padR) / (xMax - xMin);
+      const yToPx = (y) => H - padB - (y - yMin) * (H - padT - padB) / (yMax - yMin);
+
+      plotCtx.save();
+      plotCtx.globalAlpha = 0.9;
+      plotCtx.lineWidth = 1.5;
+      plotCtx.beginPath();
+      plotCtx.moveTo(padL, padT);
+      plotCtx.lineTo(padL, H - padB);
+      plotCtx.lineTo(W - padR, H - padB);
+      plotCtx.stroke();
+      plotCtx.restore();
+
+      plotCtx.save();
+      plotCtx.globalAlpha = 0.18;
+      const nGrid = 8;
+      plotCtx.beginPath();
+      for (let i = 0; i <= nGrid; i++) {
+        const x = xMin + i * (xMax - xMin) / nGrid;
+        const px = xToPx(x);
+        plotCtx.moveTo(px, padT);
+        plotCtx.lineTo(px, H - padB);
+      }
+      for (let i = 0; i <= nGrid; i++) {
+        const y = yMin + i * (yMax - yMin) / nGrid;
+        const py = yToPx(y);
+        plotCtx.moveTo(padL, py);
+        plotCtx.lineTo(W - padR, py);
+      }
+      plotCtx.stroke();
+      plotCtx.restore();
+
+      plotCtx.save();
+      plotCtx.lineWidth = 2;
+      plotCtx.beginPath();
+      const steps = 400;
+      for (let i = 0; i <= steps; i++) {
+        const l = xMin + i * (xMax - xMin) / steps;
+        const A = l * (half - l);
+        const px = xToPx(l);
+        const py = yToPx(A);
+        if (i === 0) plotCtx.moveTo(px, py);
+        else plotCtx.lineTo(px, py);
+      }
+      plotCtx.stroke();
+      plotCtx.restore();
+
+      // mark optimum
+      const pxStar = xToPx(lStar);
+      const pyStar = yToPx(AStar);
+      drawStar(plotCtx, pxStar, pyStar, 9);
+
+      // current point
+      const pxCur = xToPx(state.l);
+      const pyCur = yToPx(state.A);
+      plotCtx.save();
+      plotCtx.beginPath();
+      plotCtx.arc(pxCur, pyCur, 5.5, 0, Math.PI * 2);
+      plotCtx.fill();
+      plotCtx.restore();
+
+      plotCtx.save();
+      plotCtx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      plotCtx.globalAlpha = 0.95;
+      plotCtx.fillText(`l`, W - padR - 10, H - padB + 26);
+      plotCtx.fillText(`A`, padL - 18, padT + 10);
+      plotCtx.restore();
+    }
+
+    function drawStar(ctx, x, y, r) {
+      ctx.save();
+      ctx.beginPath();
+      const spikes = 5;
+      const outerRadius = r;
+      const innerRadius = r * 0.45;
+      let rot = -Math.PI / 2;
+      const step = Math.PI / spikes;
+
+      ctx.moveTo(x, y - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        ctx.lineTo(x + Math.cos(rot) * outerRadius, y + Math.sin(rot) * outerRadius);
+        rot += step;
+        ctx.lineTo(x + Math.cos(rot) * innerRadius, y + Math.sin(rot) * innerRadius);
+        rot += step;
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Plotly 3D surface: D(l,w,alpha) over (l,w) with alpha fixed
+    function draw3D(state) {
+      const alpha = state.alpha;
+
+      const n = 40;
+      const xs = [];
+      const ys = [];
+      for (let i = 0; i < n; i++) {
+        xs.push(i * 0.5 / (n - 1));
+        ys.push(i * 0.5 / (n - 1));
+      }
+
+      const Z = [];
+      for (let j = 0; j < n; j++) {
+        const w = ys[j];
+        const row = [];
+        for (let i = 0; i < n; i++) {
+          const l = xs[i];
+          const D = l * w - alpha * (2 * (l + w) - 1);
+          row.push(D);
+        }
+        Z.push(row);
+      }
+
+      const surfTrace = {
+        type: 'surface',
+        x: xs,
+        y: ys,
+        z: Z,
+        showscale: false,
+        hovertemplate: 'l=%{x:.3f}<br>w=%{y:.3f}<br>D=%{z:.4f}<extra></extra>'
+      };
+
+      const pointTrace = {
+        type: 'scatter3d',
+        mode: 'markers',
+        x: [state.l],
+        y: [state.w],
+        z: [state.D],
+        marker: { size: 4 },
+        hovertemplate: 'current<br>l=%{x:.4f}<br>w=%{y:.4f}<br>D=%{z:.6f}<extra></extra>'
+      };
+
+      const layout = {
+        margin: { l: 0, r: 0, t: 0, b: 0 },
+        scene: {
+          xaxis: { title: 'l' },
+          yaxis: { title: 'w' },
+          zaxis: { title: 'D' }
+        }
+      };
+
+      Plotly.react('plotly3d', [surfTrace, pointTrace], layout, { displayModeBar: false, responsive: true });
+    }
+
+    function update() {
+      const l = parseFloat(lRange.value);
+      const alpha = parseFloat(aRange.value);
+      const state = compute(l, alpha);
+
+      lVal.textContent = state.l.toFixed(4);
+      wVal.textContent = state.w.toFixed(4);
+      aVal.textContent = state.A.toFixed(6);
+      alphaVal.textContent = state.alpha.toFixed(4);
+
+      DVal.textContent = state.D.toFixed(6);
+      dDl.textContent = state.dDdl.toFixed(4);
+      dDw.textContent = state.dDdw.toFixed(4);
+      dDa.textContent = state.dDda.toFixed(4);
+
+      drawRectView(state);
+      drawAreaPlot(state);
+      draw3D(state);
+    }
+
+    toMaxBtn.addEventListener('click', () => {
+      lRange.value = String(lStar);
+      update();
+    });
+
+    randomBtn.addEventListener('click', () => {
+      const lo = 0.0001, hi = 0.4999;
+      const r = lo + Math.random() * (hi - lo);
+      lRange.value = String(r);
+      update();
+    });
+
+    alphaOptBtn.addEventListener('click', () => {
+      aRange.value = String(alphaStar);
+      update();
+    });
+
+    lRange.addEventListener('input', update);
+    aRange.addEventListener('input', update);
+
+    // Initial render
+    aRange.value = String(alphaStar);
+    update();
+  </script>
+</body>
+</html>
