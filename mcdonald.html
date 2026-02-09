@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Max Area Rectangle with Fixed Perimeter (L=1) — Lagrange Multipliers Demo</title>
+  <title>Area vs Constraint Residual (L=1) — Heatmap in (r,A) space</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; }
     h1 { font-size: 18px; margin: 0 0 12px; }
-    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .grid { display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
 
     .card {
       border: 1px solid rgba(127,127,127,0.35);
@@ -18,34 +19,42 @@
       box-shadow: 0 1px 8px rgba(0,0,0,0.06);
       background: rgba(127,127,127,0.06);
     }
-    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
     label { font-size: 13px; opacity: 0.9; }
     input[type="range"] { width: 100%; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     .big { font-size: 16px; }
     .muted { opacity: 0.8; }
-    .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+
+    .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .kpi .box { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 10px; background: rgba(255,255,255,0.05); }
     .kpi .box .t { font-size: 12px; opacity: 0.85; margin-bottom: 4px; }
     .kpi .box .v { font-size: 16px; font-weight: 600; }
-    canvas { width: 100%; height: auto; border-radius: 12px; border: 1px solid rgba(127,127,127,0.35); background: rgba(255,255,255,0.05); }
-    .legend { font-size: 12px; opacity: 0.85; margin-top: 8px; line-height: 1.35; }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.08); margin-right: 6px; }
-    .btnrow { display:flex; gap:10px; flex-wrap: wrap; margin-top: 8px; }
+
+    .btnrow { display:flex; gap:10px; flex-wrap: wrap; margin-top: 10px; }
     button {
       border-radius: 12px; border: 1px solid rgba(127,127,127,0.35);
       padding: 8px 10px; cursor: pointer; background: rgba(127,127,127,0.10);
     }
     button:hover { background: rgba(127,127,127,0.16); }
-    .note { font-size: 12px; opacity: 0.85; margin-top: 10px; }
 
-    .threeGrid { display:grid; grid-template-columns: 1fr 1fr 1.2fr; gap:16px; }
-    @media (max-width: 1100px) { .threeGrid { grid-template-columns: 1fr; } }
+    .vizGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 1100px) { .vizGrid { grid-template-columns: 1fr; } }
 
-    /* Plotly container */
-    #plotly3d {
+    canvas {
       width: 100%;
-      height: 360px;
+      height: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(127,127,127,0.35);
+      background: rgba(255,255,255,0.05);
+    }
+    .legend { font-size: 12px; opacity: 0.85; margin-top: 8px; line-height: 1.35; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.08); margin-right: 6px; }
+    .note { font-size: 12px; opacity: 0.85; margin-top: 10px; line-height: 1.35; }
+
+    #raHeatmapDiv {
+      width: 100%;
+      height: 380px;
       border-radius: 12px;
       border: 1px solid rgba(127,127,127,0.35);
       background: rgba(255,255,255,0.05);
@@ -53,40 +62,32 @@
     }
   </style>
 
-  <!-- Plotly (CDN) -->
+  <!-- Plotly (CDN, needs internet) -->
   <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
 </head>
 
 <body>
-  <h1>Maximizing Rectangle Area with Fixed Perimeter L = 1 (connect to Lagrange multipliers)</h1>
+  <h1>Rectangle with free (l,w): show area A and constraint residual r, and a heatmap in (r,A) space</h1>
 
   <div class="grid">
     <div class="card">
-      <div class="row" style="justify-content:space-between;">
+      <div class="row">
         <div>
           <div class="muted" style="font-size:12px;">Constraint</div>
           <div class="mono big">2(l + w) = L = 1</div>
-          <div class="mono muted">⇒ w = 0.5 − l</div>
+          <div class="mono muted">Residual r(l,w) = 2(l+w) − 1</div>
         </div>
         <div class="pill mono">A = l · w</div>
       </div>
 
       <div style="margin-top:12px;">
-        <label for="lRange">Choose l (w is computed):</label>
-        <input id="lRange" type="range" min="0.0001" max="0.4999" step="0.0001" value="0.25" />
-        <div class="row" style="justify-content:space-between;">
-          <div class="mono muted">0</div>
-          <div class="mono muted">0.5</div>
-        </div>
+        <label for="lRange">Choose l (free):</label>
+        <input id="lRange" type="range" min="0" max="0.5" step="0.0005" value="0.25" />
       </div>
 
       <div style="margin-top:10px;">
-        <label for="aRange">Choose α (Lagrange multiplier):</label>
-        <input id="aRange" type="range" min="-0.5" max="0.5" step="0.0005" value="0.125" />
-        <div class="row" style="justify-content:space-between;">
-          <div class="mono muted">-0.5</div>
-          <div class="mono muted">0.5</div>
-        </div>
+        <label for="wRange">Choose w (free):</label>
+        <input id="wRange" type="range" min="0" max="0.5" step="0.0005" value="0.25" />
       </div>
 
       <div class="kpi">
@@ -95,7 +96,7 @@
           <div class="v mono" id="lVal">0.2500</div>
         </div>
         <div class="box">
-          <div class="t">w = 0.5 − l</div>
+          <div class="t">w</div>
           <div class="v mono" id="wVal">0.2500</div>
         </div>
         <div class="box">
@@ -103,154 +104,117 @@
           <div class="v mono" id="aVal">0.062500</div>
         </div>
         <div class="box">
-          <div class="t">Maximum (under L=1)</div>
-          <div class="v mono" id="amaxVal">0.062500 at l=w=0.25</div>
-        </div>
-
-        <div class="box">
-          <div class="t">α</div>
-          <div class="v mono" id="alphaVal">0.1250</div>
+          <div class="t">Residual r = 2(l+w) − 1</div>
+          <div class="v mono" id="rVal">0.0000</div>
         </div>
         <div class="box">
-          <div class="t">D(l,w,α)=lw−α(2(l+w)−1)</div>
-          <div class="v mono" id="DVal">0.062500</div>
-        </div>
-
-        <div class="box">
-          <div class="t">∂D/∂l = w − 2α</div>
-          <div class="v mono" id="dDl">0.0000</div>
+          <div class="t">Perimeter P = 2(l+w)</div>
+          <div class="v mono" id="pVal">1.0000</div>
         </div>
         <div class="box">
-          <div class="t">∂D/∂w = l − 2α</div>
-          <div class="v mono" id="dDw">0.0000</div>
-        </div>
-        <div class="box">
-          <div class="t">∂D/∂α = 2(l+w) − 1</div>
-          <div class="v mono" id="dDa">0.0000</div>
+          <div class="t">Feasible optimum (on r=0)</div>
+          <div class="v mono" id="optVal">A*=0.062500 at l=w=0.25</div>
         </div>
       </div>
 
       <div class="btnrow">
-        <button id="toMaxBtn" type="button">Jump to optimum (square)</button>
-        <button id="randomBtn" type="button">Random l</button>
-        <button id="alphaOptBtn" type="button">Set α to optimum (1/8)</button>
-      </div>
-
-      <div class="card" style="margin-top:12px; background: rgba(127,127,127,0.04);">
-        <div class="muted" style="font-size:12px; margin-bottom:6px;">Lagrange multipliers sketch (text-math)</div>
-        <div class="mono" style="font-size:13px; line-height:1.45;">
-          Maximize f(l,w) = l w<br/>
-          subject to g(l,w) = 2(l+w) − 1 = 0<br/><br/>
-          Lagrangian: D(l,w,α) = l w − α g(l,w)<br/><br/>
-          (∂/∂l): w − 2α = 0<br/>
-          (∂/∂w): l − 2α = 0<br/>
-          (∂/∂α): 2(l+w) − 1 = 0<br/><br/>
-          ⇒ l = w = 0.25, α = 0.125
-        </div>
+        <button id="toFeasibleOptBtn" type="button">Jump to feasible optimum (square)</button>
+        <button id="randomBtn" type="button">Random (l,w)</button>
+        <button id="projectBtn" type="button">Project to r=0 (keep l, set w)</button>
       </div>
 
       <div class="note">
-        Interpretation: along the constraint line (w = 0.5 − l), the area becomes
-        <span class="mono">A(l) = l(0.5 − l)</span>, a concave parabola with its peak at <span class="mono">l = 0.25</span>.
+        The heatmap on the right is in <span class="mono">(r,A)</span> coordinates, not in <span class="mono">(l,w)</span>.
+        Each pixel aggregates how many <span class="mono">(l,w)</span> grid points map to that residual and area pair.
+        The dot shows your current operating point <span class="mono">(r(l,w), A(l,w))</span>, and the dashed line is <span class="mono">r=0</span>.
       </div>
     </div>
 
     <div class="card">
-      <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+      <div class="row" style="margin-bottom: 8px;">
         <div class="muted" style="font-size:12px;">
-          Rectangle and area curve, plus a 3D surface of D(l,w,α) (surface is over (l,w) for current α).
+          Left: rectangle. Right: heatmap in (residual r, area A) space with current point.
         </div>
         <div class="mono muted">(c) Fayyaz Minhas</div>
       </div>
 
-      <div class="threeGrid">
+      <div class="vizGrid">
         <div>
-          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Rectangle view</div>
-          <canvas id="rectCanvas" width="520" height="360"></canvas>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Rectangle view (aspect ratio l:w)</div>
+          <canvas id="rectCanvas" width="520" height="380"></canvas>
           <div class="legend">
-            <span class="pill mono">Current</span> shows chosen <span class="mono">l</span>, computed <span class="mono">w</span>, and area.
+            <span class="pill mono">Text</span> includes <span class="mono">A</span> and <span class="mono">r</span>.
+            <span class="pill mono">Feasible</span> means <span class="mono">r=0</span>.
           </div>
         </div>
 
         <div>
-          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Area curve A(l) = l(0.5 − l)</div>
-          <canvas id="plotCanvas" width="520" height="360"></canvas>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Heatmap in (r,A): density of mapped points</div>
+          <div id="raHeatmapDiv"></div>
           <div class="legend">
-            <div><span class="pill mono">Dot</span> your current (l, A).</div>
-            <div><span class="pill mono">Star</span> the maximum at l = 0.25.</div>
+            x-axis: <span class="mono">r = 2(l+w) − 1</span> (constraint violation). y-axis: <span class="mono">A = l·w</span>.
+            Colour: how many grid points (l,w) land in that bin.
           </div>
         </div>
+      </div>
 
-        <div>
-          <div class="muted" style="font-size:12px; margin: 0 0 6px;">3D plot of D(l,w,α) for current α</div>
-          <div id="plotly3d"></div>
-          <div class="legend">
-            Surface: D as a function of (l,w) with α fixed. Point: current (l,w,D).
-          </div>
-        </div>
+      <div class="note">
+        On the line <span class="mono">r=0</span>, the best achievable area is the peak at <span class="mono">A=0.0625</span>.
+        If you allow <span class="mono">r&gt;0</span>, you can get larger areas, but you are cheating by using more than length <span class="mono">L</span>.
       </div>
     </div>
   </div>
 
   <script>
-    // Fixed perimeter
     const L = 1.0;
-    const half = L / 2; // l + w = 0.5
 
     const lRange = document.getElementById('lRange');
-    const aRange = document.getElementById('aRange');
+    const wRange = document.getElementById('wRange');
 
     const lVal = document.getElementById('lVal');
     const wVal = document.getElementById('wVal');
     const aVal = document.getElementById('aVal');
-    const amaxVal = document.getElementById('amaxVal');
-    const alphaVal = document.getElementById('alphaVal');
-
-    const DVal = document.getElementById('DVal');
-    const dDl = document.getElementById('dDl');
-    const dDw = document.getElementById('dDw');
-    const dDa = document.getElementById('dDa');
+    const rVal = document.getElementById('rVal');
+    const pVal = document.getElementById('pVal');
+    const optVal = document.getElementById('optVal');
 
     const rectCanvas = document.getElementById('rectCanvas');
-    const plotCanvas = document.getElementById('plotCanvas');
     const rectCtx = rectCanvas.getContext('2d');
-    const plotCtx = plotCanvas.getContext('2d');
 
-    const toMaxBtn = document.getElementById('toMaxBtn');
+    const toFeasibleOptBtn = document.getElementById('toFeasibleOptBtn');
     const randomBtn = document.getElementById('randomBtn');
-    const alphaOptBtn = document.getElementById('alphaOptBtn');
+    const projectBtn = document.getElementById('projectBtn');
+
+    const lStar = 0.25;
+    const wStar = 0.25;
+    const AStar = lStar * wStar;
+    optVal.textContent = `A*=${AStar.toFixed(6)} at l=w=0.25`;
 
     function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 
-    function compute(l, alpha) {
-      const w = half - l;
+    function compute(l, w) {
       const A = l * w;
-      const g = 2 * (l + w) - 1; // = 0 by construction when w=0.5-l
-      const D = A - alpha * g;
-
-      const dDdl = w - 2 * alpha;
-      const dDdw = l - 2 * alpha;
-      const dDda = 2 * (l + w) - 1;
-
-      return { l, w, A, alpha, D, dDdl, dDdw, dDda };
+      const P = 2 * (l + w);
+      const r = P - L; // = 2(l+w)-1
+      return { l, w, A, P, r };
     }
 
-    // Optimum
-    const lStar = half / 2;      // 0.25
-    const AStar = lStar * lStar; // 0.0625
-    const alphaStar = 1/8;       // 0.125
+    function clear(ctx, W, H) { ctx.clearRect(0, 0, W, H); }
 
-    amaxVal.textContent = `${AStar.toFixed(6)} at l=w=${lStar.toFixed(2)}`;
-
-    function clear(ctx, W, H) {
-      ctx.clearRect(0, 0, W, H);
-    }
-
-    function drawRectView(state) {
+    function drawRect(state) {
       const W = rectCanvas.width, H = rectCanvas.height;
       clear(rectCtx, W, H);
 
-      const pad = 36;
+      rectCtx.save();
+      rectCtx.globalAlpha = 0.16;
+      const grid = 20;
+      rectCtx.beginPath();
+      for (let x = 0; x <= W; x += grid) { rectCtx.moveTo(x, 0); rectCtx.lineTo(x, H); }
+      for (let y = 0; y <= H; y += grid) { rectCtx.moveTo(0, y); rectCtx.lineTo(W, y); }
+      rectCtx.stroke();
+      rectCtx.restore();
+
+      const pad = 44;
       const maxDrawW = W - 2 * pad;
       const maxDrawH = H - 2 * pad;
 
@@ -265,15 +229,6 @@
       const y0 = (H - drawH) / 2;
 
       rectCtx.save();
-      rectCtx.globalAlpha = 0.18;
-      const grid = 20;
-      rectCtx.beginPath();
-      for (let x = 0; x <= W; x += grid) { rectCtx.moveTo(x, 0); rectCtx.lineTo(x, H); }
-      for (let y = 0; y <= H; y += grid) { rectCtx.moveTo(0, y); rectCtx.lineTo(W, y); }
-      rectCtx.stroke();
-      rectCtx.restore();
-
-      rectCtx.save();
       rectCtx.lineWidth = 2;
       rectCtx.strokeRect(x0, y0, drawW, drawH);
       rectCtx.restore();
@@ -282,207 +237,166 @@
       rectCtx.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
       rectCtx.globalAlpha = 0.95;
       rectCtx.fillText(`l = ${state.l.toFixed(4)}`, x0, y0 - 10);
-      rectCtx.fillText(`w = ${state.w.toFixed(4)}`, x0, y0 + drawH + 20);
-      rectCtx.fillText(`A = l·w = ${state.A.toFixed(6)}`, x0, y0 + drawH + 40);
-      rectCtx.fillText(`α = ${state.alpha.toFixed(4)}`, x0, y0 + drawH + 60);
+      rectCtx.fillText(`w = ${state.w.toFixed(4)}`, x0, y0 + drawH + 18);
+      rectCtx.fillText(`A = l·w = ${state.A.toFixed(6)}`, x0, y0 + drawH + 38);
+      rectCtx.fillText(`P = 2(l+w) = ${state.P.toFixed(6)}`, x0, y0 + drawH + 58);
+      rectCtx.fillText(`r = P − L = ${state.r.toFixed(6)}`, x0, y0 + drawH + 78);
       rectCtx.restore();
     }
 
-    function drawAreaPlot(state) {
-      const W = plotCanvas.width, H = plotCanvas.height;
-      clear(plotCtx, W, H);
+    // Build a heatmap in (r, A) space by binning (l,w) grid points.
+    // Colour indicates density (count) of points landing in each (r,A) bin.
+    const RA = {
+      initialised: false,
+      // ranges given l,w in [0,0.5]:
+      // r = 2(l+w)-1 ranges from -1 to +1
+      rMin: -1.0, rMax: 1.0,
+      // A = l w ranges from 0 to 0.25
+      aMin: 0.0, aMax: 0.25,
+      nR: 120,
+      nA: 100,
+      counts: null,
+      rCenters: null,
+      aCenters: null
+    };
 
-      const padL = 46, padR = 18, padT = 18, padB = 40;
-      const xMin = 0, xMax = half;
-      const yMin = 0, yMax = AStar;
+    function precomputeRADensity() {
+      const counts = Array.from({ length: RA.nA }, () => Array(RA.nR).fill(0));
 
-      const xToPx = (x) => padL + (x - xMin) * (W - padL - padR) / (xMax - xMin);
-      const yToPx = (y) => H - padB - (y - yMin) * (H - padT - padB) / (yMax - yMin);
+      // Grid in (l,w)
+      const N = 260; // sampling resolution for the mapping (increase if you want smoother density)
+      for (let i = 0; i <= N; i++) {
+        const l = (0.5) * (i / N);
+        for (let j = 0; j <= N; j++) {
+          const w = (0.5) * (j / N);
+          const A = l * w;
+          const r = 2 * (l + w) - 1;
 
-      plotCtx.save();
-      plotCtx.globalAlpha = 0.9;
-      plotCtx.lineWidth = 1.5;
-      plotCtx.beginPath();
-      plotCtx.moveTo(padL, padT);
-      plotCtx.lineTo(padL, H - padB);
-      plotCtx.lineTo(W - padR, H - padB);
-      plotCtx.stroke();
-      plotCtx.restore();
+          const ir = Math.floor((r - RA.rMin) / (RA.rMax - RA.rMin) * RA.nR);
+          const ia = Math.floor((A - RA.aMin) / (RA.aMax - RA.aMin) * RA.nA);
 
-      plotCtx.save();
-      plotCtx.globalAlpha = 0.18;
-      const nGrid = 8;
-      plotCtx.beginPath();
-      for (let i = 0; i <= nGrid; i++) {
-        const x = xMin + i * (xMax - xMin) / nGrid;
-        const px = xToPx(x);
-        plotCtx.moveTo(px, padT);
-        plotCtx.lineTo(px, H - padB);
-      }
-      for (let i = 0; i <= nGrid; i++) {
-        const y = yMin + i * (yMax - yMin) / nGrid;
-        const py = yToPx(y);
-        plotCtx.moveTo(padL, py);
-        plotCtx.lineTo(W - padR, py);
-      }
-      plotCtx.stroke();
-      plotCtx.restore();
-
-      plotCtx.save();
-      plotCtx.lineWidth = 2;
-      plotCtx.beginPath();
-      const steps = 400;
-      for (let i = 0; i <= steps; i++) {
-        const l = xMin + i * (xMax - xMin) / steps;
-        const A = l * (half - l);
-        const px = xToPx(l);
-        const py = yToPx(A);
-        if (i === 0) plotCtx.moveTo(px, py);
-        else plotCtx.lineTo(px, py);
-      }
-      plotCtx.stroke();
-      plotCtx.restore();
-
-      // mark optimum
-      const pxStar = xToPx(lStar);
-      const pyStar = yToPx(AStar);
-      drawStar(plotCtx, pxStar, pyStar, 9);
-
-      // current point
-      const pxCur = xToPx(state.l);
-      const pyCur = yToPx(state.A);
-      plotCtx.save();
-      plotCtx.beginPath();
-      plotCtx.arc(pxCur, pyCur, 5.5, 0, Math.PI * 2);
-      plotCtx.fill();
-      plotCtx.restore();
-
-      plotCtx.save();
-      plotCtx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      plotCtx.globalAlpha = 0.95;
-      plotCtx.fillText(`l`, W - padR - 10, H - padB + 26);
-      plotCtx.fillText(`A`, padL - 18, padT + 10);
-      plotCtx.restore();
-    }
-
-    function drawStar(ctx, x, y, r) {
-      ctx.save();
-      ctx.beginPath();
-      const spikes = 5;
-      const outerRadius = r;
-      const innerRadius = r * 0.45;
-      let rot = -Math.PI / 2;
-      const step = Math.PI / spikes;
-
-      ctx.moveTo(x, y - outerRadius);
-      for (let i = 0; i < spikes; i++) {
-        ctx.lineTo(x + Math.cos(rot) * outerRadius, y + Math.sin(rot) * outerRadius);
-        rot += step;
-        ctx.lineTo(x + Math.cos(rot) * innerRadius, y + Math.sin(rot) * innerRadius);
-        rot += step;
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Plotly 3D surface: D(l,w,alpha) over (l,w) with alpha fixed
-    function draw3D(state) {
-      const alpha = state.alpha;
-
-      const n = 40;
-      const xs = [];
-      const ys = [];
-      for (let i = 0; i < n; i++) {
-        xs.push(i * 0.5 / (n - 1));
-        ys.push(i * 0.5 / (n - 1));
-      }
-
-      const Z = [];
-      for (let j = 0; j < n; j++) {
-        const w = ys[j];
-        const row = [];
-        for (let i = 0; i < n; i++) {
-          const l = xs[i];
-          const D = l * w - alpha * (2 * (l + w) - 1);
-          row.push(D);
+          if (ir >= 0 && ir < RA.nR && ia >= 0 && ia < RA.nA) {
+            counts[ia][ir] += 1;
+          }
         }
-        Z.push(row);
       }
 
-      const surfTrace = {
-        type: 'surface',
-        x: xs,
-        y: ys,
-        z: Z,
-        showscale: false,
-        hovertemplate: 'l=%{x:.3f}<br>w=%{y:.3f}<br>D=%{z:.4f}<extra></extra>'
+      const rCenters = Array.from({ length: RA.nR }, (_, k) =>
+        RA.rMin + (k + 0.5) * (RA.rMax - RA.rMin) / RA.nR
+      );
+      const aCenters = Array.from({ length: RA.nA }, (_, k) =>
+        RA.aMin + (k + 0.5) * (RA.aMax - RA.aMin) / RA.nA
+      );
+
+      RA.counts = counts;
+      RA.rCenters = rCenters;
+      RA.aCenters = aCenters;
+    }
+
+    function drawRAHeatmap(state) {
+      if (!RA.counts) precomputeRADensity();
+
+      const heat = {
+        type: 'heatmap',
+        x: RA.rCenters,
+        y: RA.aCenters,
+        z: RA.counts,
+        showscale: true,
+        colorbar: { title: 'count' },
+        hovertemplate: 'r=%{x:.3f}<br>A=%{y:.4f}<br>count=%{z}<extra></extra>'
       };
 
-      const pointTrace = {
-        type: 'scatter3d',
-        mode: 'markers',
-        x: [state.l],
-        y: [state.w],
-        z: [state.D],
-        marker: { size: 4 },
-        hovertemplate: 'current<br>l=%{x:.4f}<br>w=%{y:.4f}<br>D=%{z:.6f}<extra></extra>'
+      const currentPoint = {
+        type: 'scatter',
+        mode: 'markers+text',
+        x: [state.r],
+        y: [state.A],
+        text: ['current'],
+        textposition: 'top center',
+        marker: { size: 10 },
+        hovertemplate: 'current<br>r=%{x:.6f}<br>A=%{y:.6f}<extra></extra>'
+      };
+
+      // vertical line r=0
+      const r0Line = {
+        type: 'scatter',
+        mode: 'lines',
+        x: [0, 0],
+        y: [RA.aMin, RA.aMax],
+        line: { width: 2, dash: 'dash' },
+        hoverinfo: 'skip',
+        name: 'r=0'
+      };
+
+      // highlight the feasible maximum point (r=0, A=A*)
+      const feasibleOpt = {
+        type: 'scatter',
+        mode: 'markers+text',
+        x: [0],
+        y: [AStar],
+        text: ['feasible max'],
+        textposition: 'bottom center',
+        marker: { size: 9 },
+        hovertemplate: 'feasible max<br>r=0<br>A=%{y:.6f}<extra></extra>'
       };
 
       const layout = {
-        margin: { l: 0, r: 0, t: 0, b: 0 },
-        scene: {
-          xaxis: { title: 'l' },
-          yaxis: { title: 'w' },
-          zaxis: { title: 'D' }
-        }
+        margin: { l: 55, r: 10, t: 10, b: 45 },
+        xaxis: { title: 'residual r = 2(l+w) − 1', range: [RA.rMin, RA.rMax] },
+        yaxis: { title: 'area A = l·w', range: [RA.aMin, RA.aMax] }
       };
 
-      Plotly.react('plotly3d', [surfTrace, pointTrace], layout, { displayModeBar: false, responsive: true });
+      const config = { displayModeBar: false, responsive: true };
+
+      if (!RA.initialised) {
+        Plotly.newPlot('raHeatmapDiv', [heat, r0Line, feasibleOpt, currentPoint], layout, config);
+        RA.initialised = true;
+      } else {
+        // update only the current point (trace index 3)
+        Plotly.restyle('raHeatmapDiv', { x: [[state.r]], y: [[state.A]] }, [3]);
+      }
     }
 
     function update() {
       const l = parseFloat(lRange.value);
-      const alpha = parseFloat(aRange.value);
-      const state = compute(l, alpha);
+      const w = parseFloat(wRange.value);
+      const state = compute(l, w);
 
       lVal.textContent = state.l.toFixed(4);
       wVal.textContent = state.w.toFixed(4);
       aVal.textContent = state.A.toFixed(6);
-      alphaVal.textContent = state.alpha.toFixed(4);
+      rVal.textContent = state.r.toFixed(6);
+      pVal.textContent = state.P.toFixed(6);
 
-      DVal.textContent = state.D.toFixed(6);
-      dDl.textContent = state.dDdl.toFixed(4);
-      dDw.textContent = state.dDdw.toFixed(4);
-      dDa.textContent = state.dDda.toFixed(4);
-
-      drawRectView(state);
-      drawAreaPlot(state);
-      draw3D(state);
+      drawRect(state);
+      drawRAHeatmap(state);
     }
 
-    toMaxBtn.addEventListener('click', () => {
+    toFeasibleOptBtn.addEventListener('click', () => {
       lRange.value = String(lStar);
+      wRange.value = String(wStar);
       update();
     });
 
     randomBtn.addEventListener('click', () => {
-      const lo = 0.0001, hi = 0.4999;
-      const r = lo + Math.random() * (hi - lo);
-      lRange.value = String(r);
+      const l = Math.random() * 0.5;
+      const w = Math.random() * 0.5;
+      lRange.value = String(l);
+      wRange.value = String(w);
       update();
     });
 
-    alphaOptBtn.addEventListener('click', () => {
-      aRange.value = String(alphaStar);
+    projectBtn.addEventListener('click', () => {
+      // Keep l, set w so that r=0, i.e. l+w=0.5
+      const l = parseFloat(lRange.value);
+      const w = clamp(0.5 - l, 0, 0.5);
+      wRange.value = String(w);
       update();
     });
 
     lRange.addEventListener('input', update);
-    aRange.addEventListener('input', update);
+    wRange.addEventListener('input', update);
 
-    // Initial render
-    aRange.value = String(alphaStar);
     update();
   </script>
 </body>
