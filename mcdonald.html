@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Area vs Constraint Residual (L=1) — Heatmap in (r,A) space</title>
+  <title>Area vs Constraint Residual (L=1) — (r,A) view</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; }
@@ -52,7 +52,7 @@
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.08); margin-right: 6px; }
     .note { font-size: 12px; opacity: 0.85; margin-top: 10px; line-height: 1.35; }
 
-    #raHeatmapDiv {
+    #raPlotDiv {
       width: 100%;
       height: 380px;
       border-radius: 12px;
@@ -67,7 +67,7 @@
 </head>
 
 <body>
-  <h1>Rectangle with free (l,w): show area A and constraint residual r, and a heatmap in (r,A) space</h1>
+  <h1>Rectangle with free (l,w): show area A and constraint residual r, and a clean (r,A) plot</h1>
 
   <div class="grid">
     <div class="card">
@@ -124,16 +124,16 @@
       </div>
 
       <div class="note">
-        The heatmap on the right is in <span class="mono">(r,A)</span> coordinates, not in <span class="mono">(l,w)</span>.
-        Each pixel aggregates how many <span class="mono">(l,w)</span> grid points map to that residual and area pair.
-        The dot shows your current operating point <span class="mono">(r(l,w), A(l,w))</span>, and the dashed line is <span class="mono">r=0</span>.
+        Right-hand plot is in <span class="mono">(r,A)</span> coordinates.
+        The dot is your current operating point <span class="mono">(r(l,w), A(l,w))</span>.
+        The dashed line is feasibility: <span class="mono">r=0</span>.
       </div>
     </div>
 
     <div class="card">
       <div class="row" style="margin-bottom: 8px;">
         <div class="muted" style="font-size:12px;">
-          Left: rectangle. Right: heatmap in (residual r, area A) space with current point.
+          Left: rectangle. Right: (residual r, area A) with current point.
         </div>
         <div class="mono muted">(c) Fayyaz Minhas</div>
       </div>
@@ -149,18 +149,17 @@
         </div>
 
         <div>
-          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Heatmap in (r,A): density of mapped points</div>
-          <div id="raHeatmapDiv"></div>
+          <div class="muted" style="font-size:12px; margin: 0 0 6px;">Clean plot in (r,A): constraint violation vs area</div>
+          <div id="raPlotDiv"></div>
           <div class="legend">
             x-axis: <span class="mono">r = 2(l+w) − 1</span> (constraint violation). y-axis: <span class="mono">A = l·w</span>.
-            Colour: how many grid points (l,w) land in that bin.
           </div>
         </div>
       </div>
 
       <div class="note">
-        On the line <span class="mono">r=0</span>, the best achievable area is the peak at <span class="mono">A=0.0625</span>.
-        If you allow <span class="mono">r&gt;0</span>, you can get larger areas, but you are cheating by using more than length <span class="mono">L</span>.
+        On <span class="mono">r=0</span>, the best achievable area is <span class="mono">A=0.0625</span> at <span class="mono">l=w=0.25</span>.
+        If you allow <span class="mono">r&gt;0</span>, you can get larger areas, but you are exceeding <span class="mono">L</span>.
       </div>
     </div>
   </div>
@@ -244,68 +243,10 @@
       rectCtx.restore();
     }
 
-    // Build a heatmap in (r, A) space by binning (l,w) grid points.
-    // Colour indicates density (count) of points landing in each (r,A) bin.
-    const RA = {
-      initialised: false,
-      // ranges given l,w in [0,0.5]:
-      // r = 2(l+w)-1 ranges from -1 to +1
-      rMin: -1.0, rMax: 1.0,
-      // A = l w ranges from 0 to 0.25
-      aMin: 0.0, aMax: 0.25,
-      nR: 120,
-      nA: 100,
-      counts: null,
-      rCenters: null,
-      aCenters: null
-    };
+    // Simple (r,A) plot: no density, no heatmap.
+    const RAPlot = { initialised: false };
 
-    function precomputeRADensity() {
-      const counts = Array.from({ length: RA.nA }, () => Array(RA.nR).fill(0));
-
-      // Grid in (l,w)
-      const N = 260; // sampling resolution for the mapping (increase if you want smoother density)
-      for (let i = 0; i <= N; i++) {
-        const l = (0.5) * (i / N);
-        for (let j = 0; j <= N; j++) {
-          const w = (0.5) * (j / N);
-          const A = l * w;
-          const r = 2 * (l + w) - 1;
-
-          const ir = Math.floor((r - RA.rMin) / (RA.rMax - RA.rMin) * RA.nR);
-          const ia = Math.floor((A - RA.aMin) / (RA.aMax - RA.aMin) * RA.nA);
-
-          if (ir >= 0 && ir < RA.nR && ia >= 0 && ia < RA.nA) {
-            counts[ia][ir] += 1;
-          }
-        }
-      }
-
-      const rCenters = Array.from({ length: RA.nR }, (_, k) =>
-        RA.rMin + (k + 0.5) * (RA.rMax - RA.rMin) / RA.nR
-      );
-      const aCenters = Array.from({ length: RA.nA }, (_, k) =>
-        RA.aMin + (k + 0.5) * (RA.aMax - RA.aMin) / RA.nA
-      );
-
-      RA.counts = counts;
-      RA.rCenters = rCenters;
-      RA.aCenters = aCenters;
-    }
-
-    function drawRAHeatmap(state) {
-      if (!RA.counts) precomputeRADensity();
-
-      const heat = {
-        type: 'heatmap',
-        x: RA.rCenters,
-        y: RA.aCenters,
-        z: RA.counts,
-        showscale: true,
-        colorbar: { title: 'count' },
-        hovertemplate: 'r=%{x:.3f}<br>A=%{y:.4f}<br>count=%{z}<extra></extra>'
-      };
-
+    function drawRAPlot(state) {
       const currentPoint = {
         type: 'scatter',
         mode: 'markers+text',
@@ -317,18 +258,16 @@
         hovertemplate: 'current<br>r=%{x:.6f}<br>A=%{y:.6f}<extra></extra>'
       };
 
-      // vertical line r=0
       const r0Line = {
         type: 'scatter',
         mode: 'lines',
         x: [0, 0],
-        y: [RA.aMin, RA.aMax],
+        y: [0, 0.25],
         line: { width: 2, dash: 'dash' },
         hoverinfo: 'skip',
         name: 'r=0'
       };
 
-      // highlight the feasible maximum point (r=0, A=A*)
       const feasibleOpt = {
         type: 'scatter',
         mode: 'markers+text',
@@ -342,18 +281,18 @@
 
       const layout = {
         margin: { l: 55, r: 10, t: 10, b: 45 },
-        xaxis: { title: 'residual r = 2(l+w) − 1', range: [RA.rMin, RA.rMax] },
-        yaxis: { title: 'area A = l·w', range: [RA.aMin, RA.aMax] }
+        xaxis: { title: 'residual r = 2(l+w) − 1', range: [-1, 1], zeroline: false },
+        yaxis: { title: 'area A = l·w', range: [0, 0.25] }
       };
 
       const config = { displayModeBar: false, responsive: true };
 
-      if (!RA.initialised) {
-        Plotly.newPlot('raHeatmapDiv', [heat, r0Line, feasibleOpt, currentPoint], layout, config);
-        RA.initialised = true;
+      if (!RAPlot.initialised) {
+        Plotly.newPlot('raPlotDiv', [r0Line, feasibleOpt, currentPoint], layout, config);
+        RAPlot.initialised = true;
       } else {
-        // update only the current point (trace index 3)
-        Plotly.restyle('raHeatmapDiv', { x: [[state.r]], y: [[state.A]] }, [3]);
+        // Update only the current point (trace index 2)
+        Plotly.restyle('raPlotDiv', { x: [[state.r]], y: [[state.A]] }, [2]);
       }
     }
 
@@ -369,7 +308,7 @@
       pVal.textContent = state.P.toFixed(6);
 
       drawRect(state);
-      drawRAHeatmap(state);
+      drawRAPlot(state);
     }
 
     toFeasibleOptBtn.addEventListener('click', () => {
