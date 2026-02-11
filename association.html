@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Association Demo: from variance to information</title>
 
-  <!-- MathJax for equations in the left pane -->
   <script>
     window.MathJax = {
       tex: { inlineMath: [['$', '$']], displayMath: [['$$','$$']] },
@@ -16,20 +15,11 @@
 
   <style>
     :root { color-scheme: light dark; }
-    body {
-      margin: 0;
-      padding: 16px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
+    body { margin: 0; padding: 16px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     h1 { font-size: 18px; margin: 0 0 10px; }
     .sub { font-size: 13px; opacity: 0.85; margin-bottom: 14px; }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 420px 1fr;
-      gap: 16px;
-      align-items: start;
-    }
+    .grid { display: grid; grid-template-columns: 420px 1fr; gap: 16px; align-items: start; }
     @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
 
     .card {
@@ -49,10 +39,7 @@
       font-size: 13px;
       user-select: none;
     }
-    .btn.active {
-      border-color: rgba(40,120,255,0.9);
-      box-shadow: 0 0 0 2px rgba(40,120,255,0.18) inset;
-    }
+    .btn.active { border-color: rgba(40,120,255,0.9); box-shadow: 0 0 0 2px rgba(40,120,255,0.18) inset; }
 
     label { font-size: 13px; opacity: 0.9; display: block; margin: 10px 0 6px; }
     input[type="range"] { width: 100%; }
@@ -61,20 +48,18 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
     .small { font-size: 12px; opacity: 0.9; line-height: 1.35; }
 
-    .plots {
-      display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
-      gap: 16px;
-      align-items: start;
-    }
+    .plots { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; align-items: start; }
     @media (max-width: 1100px) { .plots { grid-template-columns: 1fr; } }
 
-    .plotGrid {
+    .plotGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 900px) { .plotGrid { grid-template-columns: 1fr; } }
+
+    /* Stacked joint plots */
+    .stackGrid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 12px;
     }
-    @media (max-width: 900px) { .plotGrid { grid-template-columns: 1fr; } }
 
     canvas {
       width: 100%;
@@ -141,7 +126,7 @@
         <div style="font-size:14px; margin-bottom:8px;"><b>Scatter plot</b> (axis locked to square)</div>
         <canvas id="scatter" width="900" height="900" aria-label="scatter"></canvas>
         <div class="small" style="margin-top:8px;">
-          Compare the observed joint distribution $P(X,Y)$ with the independence model $Q(X,Y)=P(X)P(Y)$.
+          Below: compare observed $P(X,Y)$ with the independence model $Q(X,Y)=P(X)P(Y)$ using the same colour scale.
         </div>
       </div>
 
@@ -156,14 +141,18 @@
             <canvas id="histY" width="900" height="520"></canvas>
           </div>
 
-          <div>
-            <div style="font-size:14px; margin-bottom:8px;"><b>Observed joint</b> $P(X,Y)$ (binned)</div>
-            <canvas id="jointP" width="900" height="620"></canvas>
-          </div>
+          <div style="grid-column:1 / -1;">
+            <div class="stackGrid">
+              <div>
+                <div style="font-size:14px; margin-bottom:8px;"><b>Observed joint</b> $P(X,Y)$ (binned)</div>
+                <canvas id="jointP" width="1200" height="560"></canvas>
+              </div>
 
-          <div>
-            <div style="font-size:14px; margin-bottom:8px;"><b>Independence model</b> $Q(X,Y)=P(X)P(Y)$</div>
-            <canvas id="jointQ" width="900" height="620"></canvas>
+              <div>
+                <div style="font-size:14px; margin-bottom:8px;"><b>Independence model</b> $Q(X,Y)=P(X)P(Y)$</div>
+                <canvas id="jointQ" width="1200" height="560"></canvas>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -171,10 +160,6 @@
   </div>
 
 <script>
-/* =========================
-   Utilities
-   ========================= */
-
 function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
 function mulberry32(seed) {
@@ -217,7 +202,7 @@ function normalise2D(xs, ys) {
   const sx = std(xs), sy = std(ys);
   const x2 = xs.map(v => (v - mx) / (sx || 1));
   const y2 = ys.map(v => (v - my) / (sy || 1));
-  return { x: x2, y: y2, mx, my, sx, sy };
+  return { x: x2, y: y2 };
 }
 
 function quantileEdges(values, bins) {
@@ -229,8 +214,7 @@ function quantileEdges(values, bins) {
     const lo = Math.floor(idx);
     const hi = Math.ceil(idx);
     const t = idx - lo;
-    const val = (1-t) * v[lo] + t * v[hi];
-    edges.push(val);
+    edges.push((1-t) * v[lo] + t * v[hi]);
   }
   for (let i = 1; i < edges.length; i++) {
     if (edges[i] <= edges[i-1]) edges[i] = edges[i-1] + 1e-12;
@@ -283,9 +267,7 @@ function toFixedSmart(x) {
   return x.toFixed(2);
 }
 
-/* =========================
-   Canvas drawing (crisp)
-   ========================= */
+/* ---------- Canvas drawing (crisp) ---------- */
 
 function setupHiDPICanvas(canvas) {
   const dpr = window.devicePixelRatio || 1;
@@ -399,7 +381,7 @@ function drawHistogram(canvas, values) {
   }
 }
 
-function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTop="P(Y)", titleRight="P(X)", vmaxOverride=null) {
+function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft, titleTop, titleRight, vmaxOverride=null) {
   const { ctx, w, h } = setupHiDPICanvas(canvas);
   clear(ctx, w, h);
 
@@ -428,7 +410,7 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTo
 
   const vmax = vmaxOverride !== null ? vmaxOverride : Math.max(...Pxy.flat(), 1e-12);
 
-  // top marginal Py
+  // top Py
   ctx.strokeStyle = "rgba(127,127,127,0.6)";
   ctx.fillStyle = "rgba(40,120,255,0.55)";
   const barW = topW / by;
@@ -442,7 +424,7 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTo
     ctx.strokeRect(x0, y0, barW - 2, bh);
   }
 
-  // right marginal Px
+  // right Px
   const barH = rightH / bx;
   const maxPx = Math.max(...Px, 1e-12);
   for (let i = 0; i < bx; i++) {
@@ -454,7 +436,7 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTo
     ctx.strokeRect(x0, y0, bw, barH - 2);
   }
 
-  // heatmap
+  // heat
   const cellW = heatW / by;
   const cellH = heatH / bx;
   for (let i = 0; i < bx; i++) {
@@ -470,7 +452,7 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTo
     }
   }
 
-  // outlines and labels
+  // outlines and titles
   ctx.strokeStyle = "rgba(127,127,127,0.65)";
   ctx.lineWidth = 1;
   ctx.strokeRect(heatX0, heatY0, heatW, heatH);
@@ -484,9 +466,7 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTo
   ctx.fillText(titleLeft, heatX0 + 6, heatY0 - 10);
 }
 
-/* =========================
-   Datasets
-   ========================= */
+/* ---------- Datasets ---------- */
 
 const DATASETS = [
   { key: "ind_gauss", name: "Independent Gaussian" },
@@ -557,9 +537,7 @@ function generateDataset(key, n, noise, rng) {
   return { x, y };
 }
 
-/* =========================
-   Compute measures
-   ========================= */
+/* ---------- Compute measures ---------- */
 
 let state = {
   datasetKey: "ind_gauss",
@@ -573,7 +551,6 @@ let state = {
 function computeAll(xRaw, yRaw, bins) {
   const n = xRaw.length;
 
-  // classical stats
   const mx = mean(xRaw), my = mean(yRaw);
   const vx = variance(xRaw), vy = variance(yRaw);
   const sx = Math.sqrt(vx), sy = Math.sqrt(vy);
@@ -583,7 +560,6 @@ function computeAll(xRaw, yRaw, bins) {
   const C = [[vx, cov],[cov, vy]];
   const R = [[1, rho],[rho, 1]];
 
-  // discretise
   const ex = quantileEdges(xRaw, bins);
   const ey = quantileEdges(yRaw, bins);
 
@@ -603,12 +579,10 @@ function computeAll(xRaw, yRaw, bins) {
   const Px = cx.map(c => c / n);
   const Py = cy.map(c => c / n);
 
-  // independence model
   const Qxy = Array.from({length: bins}, (_, i) =>
     Array.from({length: bins}, (_, j) => Px[i] * Py[j])
   );
 
-  // information
   const Hx = entropyBits(Px);
   const Hy = entropyBits(Py);
   const Hxy = entropyBits(Pxy.flat());
@@ -616,16 +590,10 @@ function computeAll(xRaw, yRaw, bins) {
   const MI = mutualInformationFromTables(Pxy, Px, Py);
   const TC = Hx + Hy - Hxy;
 
-  return {
-    n, mx, my, vx, vy, sx, sy, cov, rho,
-    C, R, bins, Px, Py, Pxy, Qxy,
-    Hx, Hy, Hxy, KL, MI, TC
-  };
+  return { n, mx, my, vx, vy, cov, rho, C, R, bins, Px, Py, Pxy, Qxy, Hx, Hy, Hxy, KL, MI, TC };
 }
 
-/* =========================
-   UI wiring
-   ========================= */
+/* ---------- UI ---------- */
 
 const elButtons = document.getElementById("datasetButtons");
 const elN = document.getElementById("nSlider");
@@ -693,10 +661,8 @@ function statsToHTML(s) {
   lines.push(`<div>TC(X,Y) [bits]</div><div class="mono">${toFixedSmart(s.TC)}</div>`);
 
   lines.push(`<div style="grid-column:1 / -1; margin-top:6px; font-size:12px; opacity:0.9;">
-    The independence model is $Q(X,Y)=P(X)P(Y)$ built from the observed marginals.
-    Mutual information equals $D_{KL}(P\|Q)$ and quantifies the deviation from independence.
+    The two stacked plots use the same colour scale so the deviation from independence is visually comparable.
   </div>`);
-
   return lines.join("");
 }
 
@@ -713,15 +679,12 @@ function regenerate() {
   }
 
   const stats = computeAll(x, y, state.bins);
-
   elStats.innerHTML = statsToHTML(stats);
 
-  // plots
   drawScatter(document.getElementById("scatter"), x, y);
   drawHistogram(document.getElementById("histX"), x);
   drawHistogram(document.getElementById("histY"), y);
 
-  // share colour scale between P and Q
   const vmax = Math.max(...stats.Pxy.flat(), ...stats.Qxy.flat(), 1e-12);
   drawJointWithMarginals(document.getElementById("jointP"), stats.Pxy, stats.Px, stats.Py, "P(X,Y)", "P(Y)", "P(X)", vmax);
   drawJointWithMarginals(document.getElementById("jointQ"), stats.Qxy, stats.Px, stats.Py, "Q(X,Y)=P(X)P(Y)", "P(Y)", "P(X)", vmax);
@@ -729,9 +692,7 @@ function regenerate() {
   if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise();
 }
 
-/* =========================
-   Events
-   ========================= */
+/* ---------- Events ---------- */
 
 elN.addEventListener("input", () => { state.n = parseInt(elN.value, 10); setLabels(); });
 elNoise.addEventListener("input", () => { state.noise = parseFloat(elNoise.value); setLabels(); });
@@ -740,7 +701,6 @@ elBins.addEventListener("input", () => { state.bins = parseInt(elBins.value, 10)
 elRegen.addEventListener("click", () => regenerate());
 elNormBtn.addEventListener("click", () => { state.normaliseOn = !state.normaliseOn; setLabels(); regenerate(); });
 
-// simple debounce when slider changes end
 let tDebounce = null;
 function debounceRegen() {
   if (tDebounce) clearTimeout(tDebounce);
@@ -750,14 +710,9 @@ elN.addEventListener("change", debounceRegen);
 elNoise.addEventListener("change", debounceRegen);
 elBins.addEventListener("change", debounceRegen);
 
-/* =========================
-   Initial
-   ========================= */
-
 renderButtons();
 setLabels();
 regenerate();
-
 window.addEventListener("resize", () => regenerate());
 </script>
 </body>
