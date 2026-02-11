@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Association Demo: from variance to information</title>
+
+  <!-- MathJax for equations in the left pane -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$']], displayMath: [['$$','$$']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .sub { font-size: 13px; opacity: 0.85; margin-bottom: 14px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      border: 1px solid rgba(127,127,127,0.35);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid rgba(127,127,127,0.5);
+      background: transparent;
+      border-radius: 10px;
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      user-select: none;
+    }
+    .btn.active {
+      border-color: rgba(40,120,255,0.9);
+      box-shadow: 0 0 0 2px rgba(40,120,255,0.18) inset;
+    }
+
+    label { font-size: 13px; opacity: 0.9; display: block; margin: 10px 0 6px; }
+    input[type="range"] { width: 100%; }
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-size: 13px; }
+    .kv div { padding: 2px 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .small { font-size: 12px; opacity: 0.9; line-height: 1.35; }
+
+    .plots {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) { .plots { grid-template-columns: 1fr; } }
+
+    .plotGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 900px) { .plotGrid { grid-template-columns: 1fr; } }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      border: 1px solid rgba(127,127,127,0.35);
+      background: rgba(127,127,127,0.06);
+      display: block;
+    }
+
+    .footer { margin-top: 10px; font-size: 12px; opacity: 0.8; }
+  </style>
+</head>
+
+<body>
+  <h1>Measuring association: from variance to information</h1>
+  <div class="sub">Interactive demo (mean, variance, covariance, correlation, entropy, KL divergence, mutual information, total correlation)</div>
+
+  <div class="grid">
+    <!-- LEFT PANE -->
+    <div class="card">
+      <div class="row" id="datasetButtons"></div>
+
+      <label>Sample size: <span class="mono" id="nLabel"></span></label>
+      <input id="nSlider" type="range" min="50" max="4000" value="500" step="50" />
+
+      <label>Noise (dataset-dependent): <span class="mono" id="noiseLabel"></span></label>
+      <input id="noiseSlider" type="range" min="0" max="1" value="0.15" step="0.01" />
+
+      <label>Binning for information measures (equal-count quantile bins): <span class="mono" id="binsLabel"></span></label>
+      <input id="binsSlider" type="range" min="2" max="12" value="6" step="1" />
+
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="regenBtn">Regenerate</button>
+        <button class="btn" id="toggleNormaliseBtn">Normalise: ON</button>
+      </div>
+
+      <hr style="border:none;border-top:1px solid rgba(127,127,127,0.35); margin:12px 0;">
+
+      <div class="small">
+        <div><b>Key idea</b></div>
+        <div style="margin-top:6px;">
+          If knowing one variable reduces our uncertainty about the other, the variables share information.
+        </div>
+        <div style="margin-top:8px;">
+          Surprise: $$s(x)=-\log_2 p(x)$$
+          Entropy: $$H(X)=-\sum_x p(x)\log_2 p(x)$$
+          KL: $$D_{KL}(P\|Q)=\sum_x p(x)\log_2\frac{p(x)}{q(x)}$$
+          Mutual information: $$I(X;Y)=D_{KL}(P_{XY}\|P_XP_Y)$$
+          Total correlation (two variables): $$TC(X,Y)=H(X)+H(Y)-H(X,Y)=I(X;Y)$$
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid rgba(127,127,127,0.35); margin:12px 0;">
+
+      <div class="kv" id="statsBox"></div>
+
+      <div class="footer">(c) Fayyaz Minhas</div>
+    </div>
+
+    <!-- RIGHT PANE -->
+    <div class="plots">
+      <div class="card">
+        <div style="font-size:14px; margin-bottom:8px;"><b>Scatter plot</b> (axis locked to square)</div>
+        <canvas id="scatter" width="900" height="900" aria-label="scatter"></canvas>
+        <div class="small" style="margin-top:8px;">
+          Compare the observed joint distribution $P(X,Y)$ with the independence model $Q(X,Y)=P(X)P(Y)$.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="plotGrid">
+          <div>
+            <div style="font-size:14px; margin-bottom:8px;"><b>Marginal: X</b></div>
+            <canvas id="histX" width="900" height="520"></canvas>
+          </div>
+          <div>
+            <div style="font-size:14px; margin-bottom:8px;"><b>Marginal: Y</b></div>
+            <canvas id="histY" width="900" height="520"></canvas>
+          </div>
+
+          <div>
+            <div style="font-size:14px; margin-bottom:8px;"><b>Observed joint</b> $P(X,Y)$ (binned)</div>
+            <canvas id="jointP" width="900" height="620"></canvas>
+          </div>
+
+          <div>
+            <div style="font-size:14px; margin-bottom:8px;"><b>Independence model</b> $Q(X,Y)=P(X)P(Y)$</div>
+            <canvas id="jointQ" width="900" height="620"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================
+   Utilities
+   ========================= */
+
+function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function() {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randn(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function mean(arr) { let s = 0; for (const x of arr) s += x; return s / arr.length; }
+
+function variance(arr) {
+  const m = mean(arr);
+  let s2 = 0;
+  for (const x of arr) s2 += (x - m) * (x - m);
+  return s2 / (arr.length - 1);
+}
+
+function std(arr) { return Math.sqrt(Math.max(variance(arr), 0)); }
+
+function covariance(x, y) {
+  const mx = mean(x), my = mean(y);
+  let s = 0;
+  for (let i = 0; i < x.length; i++) s += (x[i]-mx) * (y[i]-my);
+  return s / (x.length - 1);
+}
+
+function normalise2D(xs, ys) {
+  const mx = mean(xs), my = mean(ys);
+  const sx = std(xs), sy = std(ys);
+  const x2 = xs.map(v => (v - mx) / (sx || 1));
+  const y2 = ys.map(v => (v - my) / (sy || 1));
+  return { x: x2, y: y2, mx, my, sx, sy };
+}
+
+function quantileEdges(values, bins) {
+  const v = [...values].sort((a,b)=>a-b);
+  const edges = [];
+  for (let k = 0; k <= bins; k++) {
+    const q = k / bins;
+    const idx = q * (v.length - 1);
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    const t = idx - lo;
+    const val = (1-t) * v[lo] + t * v[hi];
+    edges.push(val);
+  }
+  for (let i = 1; i < edges.length; i++) {
+    if (edges[i] <= edges[i-1]) edges[i] = edges[i-1] + 1e-12;
+  }
+  return edges;
+}
+
+function binIndex(val, edges) {
+  const bins = edges.length - 1;
+  if (val <= edges[0]) return 0;
+  if (val >= edges[bins]) return bins - 1;
+  for (let i = 0; i < bins; i++) if (val >= edges[i] && val < edges[i+1]) return i;
+  return bins - 1;
+}
+
+function entropyBits(probFlat) {
+  let h = 0;
+  for (const p of probFlat) if (p > 0) h += -p * Math.log2(p);
+  return h;
+}
+
+function klBits(P, Q) {
+  let s = 0;
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i], q = Q[i];
+    if (p > 0) s += p * Math.log2(p / q);
+  }
+  return s;
+}
+
+function mutualInformationFromTables(Pxy, Px, Py) {
+  const bx = Pxy.length, by = Pxy[0].length;
+  let mi = 0;
+  for (let i = 0; i < bx; i++) {
+    for (let j = 0; j < by; j++) {
+      const p = Pxy[i][j];
+      if (p > 0) mi += p * Math.log2(p / (Px[i] * Py[j]));
+    }
+  }
+  return mi;
+}
+
+function toFixedSmart(x) {
+  if (!isFinite(x)) return "NaN";
+  const ax = Math.abs(x);
+  if (ax === 0) return "0";
+  if (ax < 1e-3) return x.toExponential(3);
+  if (ax < 1) return x.toFixed(4);
+  if (ax < 100) return x.toFixed(3);
+  return x.toFixed(2);
+}
+
+/* =========================
+   Canvas drawing (crisp)
+   ========================= */
+
+function setupHiDPICanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: cssW, h: cssH };
+}
+
+function clear(ctx, w, h) { ctx.clearRect(0, 0, w, h); }
+
+function drawAxes(ctx, w, h, pad, xLabel, yLabel) {
+  const x0 = pad, y0 = h - pad, x1 = w - pad, y1 = pad;
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(127,127,127,0.65)";
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y0);
+  ctx.lineTo(x1, y1);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(127,127,127,0.85)";
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  ctx.fillText(xLabel, x1 - 30, y0 + 20);
+  ctx.save();
+  ctx.translate(x0 - 28, y1 + 30);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+}
+
+function niceRange(minV, maxV) {
+  if (minV === maxV) { minV -= 1; maxV += 1; }
+  const span = maxV - minV;
+  return { min: minV - 0.05 * span, max: maxV + 0.05 * span };
+}
+
+function drawScatter(canvas, x, y) {
+  const { ctx, w, h } = setupHiDPICanvas(canvas);
+  clear(ctx, w, h);
+
+  const pad = 42;
+
+  const rx = niceRange(Math.min(...x), Math.max(...x));
+  const ry = niceRange(Math.min(...y), Math.max(...y));
+  const span = Math.max(rx.max - rx.min, ry.max - ry.min);
+  const cx = 0.5 * (rx.min + rx.max);
+  const cy = 0.5 * (ry.min + ry.max);
+  const xmin = cx - span/2, xmax = cx + span/2;
+  const ymin = cy - span/2, ymax = cy + span/2;
+
+  const toX = (v) => pad + (v - xmin) / (xmax - xmin) * (w - 2*pad);
+  const toY = (v) => (h - pad) - (v - ymin) / (ymax - ymin) * (h - 2*pad);
+
+  drawAxes(ctx, w, h, pad, "X", "Y");
+
+  ctx.strokeStyle = "rgba(127,127,127,0.22)";
+  ctx.lineWidth = 1;
+  const ticks = 4;
+  for (let k = 1; k <= ticks; k++) {
+    const tx = pad + k*(w-2*pad)/(ticks+1);
+    const ty = pad + k*(h-2*pad)/(ticks+1);
+    ctx.beginPath(); ctx.moveTo(tx, pad); ctx.lineTo(tx, h-pad); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, ty); ctx.lineTo(w-pad, ty); ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(40,120,255,0.85)";
+  for (let i = 0; i < x.length; i++) {
+    const px = toX(x[i]);
+    const py = toY(y[i]);
+    ctx.beginPath();
+    ctx.arc(px, py, 2.2, 0, 2*Math.PI);
+    ctx.fill();
+  }
+}
+
+function drawHistogram(canvas, values) {
+  const { ctx, w, h } = setupHiDPICanvas(canvas);
+  clear(ctx, w, h);
+
+  const pad = 40;
+  const bins = 18;
+
+  const r = niceRange(Math.min(...values), Math.max(...values));
+  const counts = new Array(bins).fill(0);
+
+  for (const v of values) {
+    let bi = Math.floor((v - r.min) / (r.max - r.min) * bins);
+    bi = clamp(bi, 0, bins-1);
+    counts[bi]++;
+  }
+
+  const maxC = Math.max(...counts, 1);
+  const barW = (w - 2*pad) / bins;
+
+  drawAxes(ctx, w, h, pad, "value", "count");
+
+  ctx.fillStyle = "rgba(40,120,255,0.55)";
+  ctx.strokeStyle = "rgba(40,120,255,0.85)";
+  for (let i = 0; i < bins; i++) {
+    const x0 = pad + i*barW;
+    const bh = (counts[i] / maxC) * (h - 2*pad);
+    const y0 = (h - pad) - bh;
+    ctx.fillRect(x0, y0, barW - 1, bh);
+    ctx.strokeRect(x0, y0, barW - 1, bh);
+  }
+}
+
+function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft="P(X,Y)", titleTop="P(Y)", titleRight="P(X)", vmaxOverride=null) {
+  const { ctx, w, h } = setupHiDPICanvas(canvas);
+  clear(ctx, w, h);
+
+  const pad = 46;
+  const topH = Math.floor(0.22 * h);
+  const rightW = Math.floor(0.22 * w);
+  const gap = 10;
+
+  const heatX0 = pad;
+  const heatY0 = pad + topH + gap;
+  const heatW = w - pad - rightW - gap - 10;
+  const heatH = h - heatY0 - pad;
+
+  const topX0 = heatX0;
+  const topY0 = pad;
+  const topW = heatW;
+  const topHH = topH;
+
+  const rightX0 = heatX0 + heatW + gap;
+  const rightY0 = heatY0;
+  const rightWW = rightW;
+  const rightH = heatH;
+
+  const bx = Pxy.length;
+  const by = Pxy[0].length;
+
+  const vmax = vmaxOverride !== null ? vmaxOverride : Math.max(...Pxy.flat(), 1e-12);
+
+  // top marginal Py
+  ctx.strokeStyle = "rgba(127,127,127,0.6)";
+  ctx.fillStyle = "rgba(40,120,255,0.55)";
+  const barW = topW / by;
+  const maxPy = Math.max(...Py, 1e-12);
+  for (let j = 0; j < by; j++) {
+    const v = Py[j];
+    const bh = v / maxPy * (topHH - 18);
+    const x0 = topX0 + j*barW;
+    const y0 = (topY0 + topHH - 10) - bh;
+    ctx.fillRect(x0, y0, barW - 2, bh);
+    ctx.strokeRect(x0, y0, barW - 2, bh);
+  }
+
+  // right marginal Px
+  const barH = rightH / bx;
+  const maxPx = Math.max(...Px, 1e-12);
+  for (let i = 0; i < bx; i++) {
+    const v = Px[i];
+    const bw = v / maxPx * (rightWW - 18);
+    const y0 = rightY0 + i*barH;
+    const x0 = rightX0 + 8;
+    ctx.fillRect(x0, y0, bw, barH - 2);
+    ctx.strokeRect(x0, y0, bw, barH - 2);
+  }
+
+  // heatmap
+  const cellW = heatW / by;
+  const cellH = heatH / bx;
+  for (let i = 0; i < bx; i++) {
+    for (let j = 0; j < by; j++) {
+      const p = Pxy[i][j];
+      const a = clamp(p / vmax, 0, 1);
+      ctx.fillStyle = `rgba(40,120,255,${0.08 + 0.82*a})`;
+      const x0 = heatX0 + j*cellW;
+      const y0 = heatY0 + i*cellH;
+      ctx.fillRect(x0, y0, cellW, cellH);
+      ctx.strokeStyle = "rgba(127,127,127,0.25)";
+      ctx.strokeRect(x0, y0, cellW, cellH);
+    }
+  }
+
+  // outlines and labels
+  ctx.strokeStyle = "rgba(127,127,127,0.65)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(heatX0, heatY0, heatW, heatH);
+  ctx.strokeRect(topX0, topY0, topW, topHH);
+  ctx.strokeRect(rightX0, rightY0, rightWW, rightH);
+
+  ctx.fillStyle = "rgba(127,127,127,0.9)";
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  ctx.fillText(titleTop, topX0 + 6, topY0 + 14);
+  ctx.fillText(titleRight, rightX0 + 6, rightY0 + 14);
+  ctx.fillText(titleLeft, heatX0 + 6, heatY0 - 10);
+}
+
+/* =========================
+   Datasets
+   ========================= */
+
+const DATASETS = [
+  { key: "ind_gauss", name: "Independent Gaussian" },
+  { key: "corr_gauss", name: "Correlated Gaussian" },
+  { key: "banana", name: "Nonlinear (banana)" },
+  { key: "two_blobs", name: "Two blobs" },
+  { key: "ring", name: "Ring" },
+  { key: "checker", name: "Checkerboard" }
+];
+
+function generateDataset(key, n, noise, rng) {
+  const x = new Array(n);
+  const y = new Array(n);
+
+  if (key === "ind_gauss") {
+    for (let i = 0; i < n; i++) { x[i] = randn(rng); y[i] = randn(rng); }
+  }
+
+  if (key === "corr_gauss") {
+    const rho = 0.85;
+    const s = Math.sqrt(Math.max(1 - rho*rho, 1e-9));
+    for (let i = 0; i < n; i++) {
+      const xi = randn(rng);
+      const ei = randn(rng);
+      x[i] = xi;
+      y[i] = rho*xi + s*ei;
+    }
+  }
+
+  if (key === "banana") {
+    for (let i = 0; i < n; i++) {
+      const xi = 2.0 * randn(rng);
+      const yi = 0.35 * (xi*xi - 4.0) + noise * 2.0 * randn(rng);
+      x[i] = xi; y[i] = yi;
+    }
+  }
+
+  if (key === "two_blobs") {
+    for (let i = 0; i < n; i++) {
+      const c = (rng() < 0.5) ? -1 : 1;
+      x[i] = c * 1.5 + (0.6 + 0.8*noise) * randn(rng);
+      y[i] = c * 1.2 + (0.6 + 0.8*noise) * randn(rng);
+    }
+  }
+
+  if (key === "ring") {
+    for (let i = 0; i < n; i++) {
+      const t = 2*Math.PI*rng();
+      const r = 2.0 + (0.25 + 0.6*noise) * randn(rng);
+      x[i] = r * Math.cos(t);
+      y[i] = r * Math.sin(t);
+    }
+  }
+
+  if (key === "checker") {
+    const K = 4;
+    for (let i = 0; i < n; i++) {
+      const u = (rng()*2 - 1) * 2.2;
+      const v = (rng()*2 - 1) * 2.2;
+      const iu = Math.floor((u + 2.2) / (4.4 / K));
+      const iv = Math.floor((v + 2.2) / (4.4 / K));
+      const flip = ((iu + iv) % 2 === 0) ? 1 : -1;
+      x[i] = u + (0.06 + 0.20*noise) * randn(rng);
+      y[i] = flip * v + (0.06 + 0.20*noise) * randn(rng);
+    }
+  }
+
+  return { x, y };
+}
+
+/* =========================
+   Compute measures
+   ========================= */
+
+let state = {
+  datasetKey: "ind_gauss",
+  n: 500,
+  noise: 0.15,
+  bins: 6,
+  normaliseOn: true,
+  seed: 7
+};
+
+function computeAll(xRaw, yRaw, bins) {
+  const n = xRaw.length;
+
+  // classical stats
+  const mx = mean(xRaw), my = mean(yRaw);
+  const vx = variance(xRaw), vy = variance(yRaw);
+  const sx = Math.sqrt(vx), sy = Math.sqrt(vy);
+  const cov = covariance(xRaw, yRaw);
+  const rho = cov / ((sx || 1) * (sy || 1));
+
+  const C = [[vx, cov],[cov, vy]];
+  const R = [[1, rho],[rho, 1]];
+
+  // discretise
+  const ex = quantileEdges(xRaw, bins);
+  const ey = quantileEdges(yRaw, bins);
+
+  const counts = Array.from({length: bins}, () => Array.from({length: bins}, () => 0));
+  const cx = new Array(bins).fill(0);
+  const cy = new Array(bins).fill(0);
+
+  for (let i = 0; i < n; i++) {
+    const ix = binIndex(xRaw[i], ex);
+    const iy = binIndex(yRaw[i], ey);
+    counts[ix][iy] += 1;
+    cx[ix] += 1;
+    cy[iy] += 1;
+  }
+
+  const Pxy = counts.map(row => row.map(c => c / n));
+  const Px = cx.map(c => c / n);
+  const Py = cy.map(c => c / n);
+
+  // independence model
+  const Qxy = Array.from({length: bins}, (_, i) =>
+    Array.from({length: bins}, (_, j) => Px[i] * Py[j])
+  );
+
+  // information
+  const Hx = entropyBits(Px);
+  const Hy = entropyBits(Py);
+  const Hxy = entropyBits(Pxy.flat());
+  const KL = klBits(Pxy.flat(), Qxy.flat());
+  const MI = mutualInformationFromTables(Pxy, Px, Py);
+  const TC = Hx + Hy - Hxy;
+
+  return {
+    n, mx, my, vx, vy, sx, sy, cov, rho,
+    C, R, bins, Px, Py, Pxy, Qxy,
+    Hx, Hy, Hxy, KL, MI, TC
+  };
+}
+
+/* =========================
+   UI wiring
+   ========================= */
+
+const elButtons = document.getElementById("datasetButtons");
+const elN = document.getElementById("nSlider");
+const elNoise = document.getElementById("noiseSlider");
+const elBins = document.getElementById("binsSlider");
+const elNLabel = document.getElementById("nLabel");
+const elNoiseLabel = document.getElementById("noiseLabel");
+const elBinsLabel = document.getElementById("binsLabel");
+const elStats = document.getElementById("statsBox");
+const elRegen = document.getElementById("regenBtn");
+const elNormBtn = document.getElementById("toggleNormaliseBtn");
+
+function renderButtons() {
+  elButtons.innerHTML = "";
+  for (const d of DATASETS) {
+    const b = document.createElement("button");
+    b.className = "btn" + (d.key === state.datasetKey ? " active" : "");
+    b.textContent = d.name;
+    b.onclick = () => {
+      state.datasetKey = d.key;
+      for (const child of elButtons.children) child.classList.remove("active");
+      b.classList.add("active");
+      regenerate();
+    };
+    elButtons.appendChild(b);
+  }
+}
+
+function setLabels() {
+  elNLabel.textContent = String(state.n);
+  elNoiseLabel.textContent = toFixedSmart(state.noise);
+  elBinsLabel.textContent = String(state.bins);
+  elNormBtn.textContent = "Normalise: " + (state.normaliseOn ? "ON" : "OFF");
+}
+
+function matrixToHTML(name, M) {
+  return `
+    <div>${name}</div>
+    <div class="mono" style="grid-column:1 / -1;">
+      [ ${toFixedSmart(M[0][0])}  ${toFixedSmart(M[0][1])} ]<br/>
+      [ ${toFixedSmart(M[1][0])}  ${toFixedSmart(M[1][1])} ]
+    </div>
+  `;
+}
+
+function statsToHTML(s) {
+  const lines = [];
+  lines.push(`<div><b>Classical statistics</b></div><div></div>`);
+  lines.push(`<div>Mean(X)</div><div class="mono">${toFixedSmart(s.mx)}</div>`);
+  lines.push(`<div>Mean(Y)</div><div class="mono">${toFixedSmart(s.my)}</div>`);
+  lines.push(`<div>Var(X)</div><div class="mono">${toFixedSmart(s.vx)}</div>`);
+  lines.push(`<div>Var(Y)</div><div class="mono">${toFixedSmart(s.vy)}</div>`);
+  lines.push(`<div>Cov(X,Y)</div><div class="mono">${toFixedSmart(s.cov)}</div>`);
+  lines.push(`<div>Corr(X,Y)</div><div class="mono">${toFixedSmart(s.rho)}</div>`);
+  lines.push(matrixToHTML("Covariance matrix C", s.C));
+  lines.push(matrixToHTML("Correlation matrix R", s.R));
+
+  lines.push(`<div style="margin-top:8px;"><b>Information (binned)</b></div><div></div>`);
+  lines.push(`<div>Bins</div><div class="mono">${s.bins} × ${s.bins}</div>`);
+  lines.push(`<div>H(X) [bits]</div><div class="mono">${toFixedSmart(s.Hx)}</div>`);
+  lines.push(`<div>H(Y) [bits]</div><div class="mono">${toFixedSmart(s.Hy)}</div>`);
+  lines.push(`<div>H(X,Y) [bits]</div><div class="mono">${toFixedSmart(s.Hxy)}</div>`);
+  lines.push(`<div>KL(P||PXPY) [bits]</div><div class="mono">${toFixedSmart(s.KL)}</div>`);
+  lines.push(`<div>I(X;Y) [bits]</div><div class="mono">${toFixedSmart(s.MI)}</div>`);
+  lines.push(`<div>TC(X,Y) [bits]</div><div class="mono">${toFixedSmart(s.TC)}</div>`);
+
+  lines.push(`<div style="grid-column:1 / -1; margin-top:6px; font-size:12px; opacity:0.9;">
+    The independence model is $Q(X,Y)=P(X)P(Y)$ built from the observed marginals.
+    Mutual information equals $D_{KL}(P\|Q)$ and quantifies the deviation from independence.
+  </div>`);
+
+  return lines.join("");
+}
+
+function regenerate() {
+  setLabels();
+
+  const rng = mulberry32(state.seed++);
+  const raw = generateDataset(state.datasetKey, state.n, state.noise, rng);
+
+  let x = raw.x, y = raw.y;
+  if (state.normaliseOn) {
+    const norm = normalise2D(x, y);
+    x = norm.x; y = norm.y;
+  }
+
+  const stats = computeAll(x, y, state.bins);
+
+  elStats.innerHTML = statsToHTML(stats);
+
+  // plots
+  drawScatter(document.getElementById("scatter"), x, y);
+  drawHistogram(document.getElementById("histX"), x);
+  drawHistogram(document.getElementById("histY"), y);
+
+  // share colour scale between P and Q
+  const vmax = Math.max(...stats.Pxy.flat(), ...stats.Qxy.flat(), 1e-12);
+  drawJointWithMarginals(document.getElementById("jointP"), stats.Pxy, stats.Px, stats.Py, "P(X,Y)", "P(Y)", "P(X)", vmax);
+  drawJointWithMarginals(document.getElementById("jointQ"), stats.Qxy, stats.Px, stats.Py, "Q(X,Y)=P(X)P(Y)", "P(Y)", "P(X)", vmax);
+
+  if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise();
+}
+
+/* =========================
+   Events
+   ========================= */
+
+elN.addEventListener("input", () => { state.n = parseInt(elN.value, 10); setLabels(); });
+elNoise.addEventListener("input", () => { state.noise = parseFloat(elNoise.value); setLabels(); });
+elBins.addEventListener("input", () => { state.bins = parseInt(elBins.value, 10); setLabels(); });
+
+elRegen.addEventListener("click", () => regenerate());
+elNormBtn.addEventListener("click", () => { state.normaliseOn = !state.normaliseOn; setLabels(); regenerate(); });
+
+// simple debounce when slider changes end
+let tDebounce = null;
+function debounceRegen() {
+  if (tDebounce) clearTimeout(tDebounce);
+  tDebounce = setTimeout(() => regenerate(), 120);
+}
+elN.addEventListener("change", debounceRegen);
+elNoise.addEventListener("change", debounceRegen);
+elBins.addEventListener("change", debounceRegen);
+
+/* =========================
+   Initial
+   ========================= */
+
+renderButtons();
+setLabels();
+regenerate();
+
+window.addEventListener("resize", () => regenerate());
+</script>
+</body>
+</html>
