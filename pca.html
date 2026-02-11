@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PCA variance vs direction: datasets + projection + wᵀCw</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; line-height: 1.35; }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+
+    .wrap { display: grid; grid-template-columns: 470px 1fr; gap: 14px; align-items: start; }
+    .card { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 12px; background: rgba(127,127,127,0.06); }
+
+    label { display: block; margin: 10px 0 6px; font-weight: 600; }
+    input[type="range"] { width: 100%; }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .small { font-size: 12px; opacity: 0.85; }
+    .hint { font-size: 12px; opacity: 0.8; margin-top: 8px; }
+    .eq { font-size: 13px; opacity: 0.95; margin-top: 8px; }
+
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    button {
+      border-radius: 10px;
+      border: 1px solid rgba(127,127,127,0.45);
+      background: rgba(127,127,127,0.10);
+      padding: 8px 10px;
+      cursor: pointer;
+      flex: 1 1 auto;
+    }
+    button:hover { background: rgba(127,127,127,0.16); }
+
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-variant-numeric: tabular-nums; }
+    .matBox { border: 1px solid rgba(127,127,127,0.35); border-radius: 10px; padding: 10px; background: rgba(127,127,127,0.04); }
+    .mat { display: grid; grid-template-columns: auto auto; gap: 6px 16px; margin-top: 8px; }
+    .matRow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    canvas { width: 100%; display: block; border-radius: 12px; border: 1px solid rgba(127,127,127,0.35); background: rgba(255,255,255,0.02); }
+    .canvGrid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
+    .dsPanel { display: grid; gap: 10px; }
+    .dsGroupTitle { font-weight: 700; font-size: 13px; opacity: 0.9; margin-top: 4px; }
+    .dsGrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    .dsBtn { padding: 10px 0; border-radius: 12px; text-align: center; user-select: none; font-size: 12px; line-height: 1.1; }
+    .dsBtn.active { outline: 2px solid rgba(127,127,127,0.70); background: rgba(127,127,127,0.18); }
+
+    .checkRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+    .checkRow label { margin: 0; font-weight: 600; }
+    input[type="checkbox"] { transform: scale(1.1); }
+
+    .instr {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(127,127,127,0.30);
+      background: rgba(127,127,127,0.04);
+      font-size: 12px;
+      opacity: 0.95;
+    }
+    .instr ul { margin: 6px 0 0 18px; padding: 0; }
+    .instr li { margin: 4px 0; }
+
+    footer { margin-top: 10px; font-size: 12px; opacity: 0.75; }
+
+    @media (max-width: 1100px) {
+      .wrap { grid-template-columns: 1fr; }
+      .dsGrid { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Variance along linear projections (wᵀx) and Principal Component Analysis Demo</h1>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="dsPanel">
+        <div class="dsGroupTitle">Choose a dataset</div>
+        <div class="dsGrid" id="dsGrid"></div>
+        <div class="small mono" id="dsInfo">All datasets are standardised so x and y have mean 0 and variance 1.</div>
+      </div>
+
+      <label for="angle">Direction angle θ (degrees)</label>
+      <input id="angle" type="range" min="0" max="180" value="45" step="0.1" />
+      <div class="row">
+        <div class="mono" id="angleReadout">θ = 45.0°</div>
+        <div class="mono" id="wReadout">w = (0.707, 0.707)</div>
+      </div>
+
+      <div class="checkRow">
+        <input id="showOrtho" type="checkbox" />
+        <label for="showOrtho">Show orthogonal direction w⊥ (dotted)</label>
+      </div>
+
+      <label>Sampling</label>
+      <input id="nPts" type="range" min="100" max="3000" value="800" step="50" />
+      <div class="row">
+        <div class="mono" id="nPtsReadout">n = 800</div>
+        <button id="resample">Resample</button>
+      </div>
+
+      <label>Options</label>
+      <div class="row">
+        <button id="centreBtn">Centre: on</button>
+        <button id="projBtn">Projection: on</button>
+      </div>
+
+      <label>2D covariance matrix</label>
+      <div class="matBox mono">
+        <div class="small">C = (1/n) Σ (xᵢ − μ)(xᵢ − μ)ᵀ</div>
+        <div class="matRow">
+          <div>
+            <div class="small">Numeric</div>
+            <div class="mat">
+              <div id="C11">-</div><div id="C12">-</div>
+              <div id="C21">-</div><div id="C22">-</div>
+            </div>
+          </div>
+          <div>
+            <div class="small">Pretty print</div>
+            <div class="mono" id="CPretty">[ -  -;  -  - ]</div>
+          </div>
+        </div>
+      </div>
+
+      <label>Variance computations</label>
+      <div class="kv mono">
+        <div>Var along w (raw)</div><div id="varRaw">-</div>
+        <div>Var along w (wᵀCw)</div><div id="varQuad">-</div>
+        <div>|difference|</div><div id="varDiff">-</div>
+        <div>Var along w⊥ (raw)</div><div id="varOrthoRaw">-</div>
+        <div>Overall variance (trace(C))</div><div id="varTotal">-</div>
+        <div>Mean (x, y)</div><div id="meanXY">-</div>
+        <div>Std (x, y)</div><div id="stdXY">-</div>
+      </div>
+
+      <div class="eq mono">
+        w = (cos θ, sin θ), w⊥ = (−sin θ, cos θ),  Var(wᵀX) = wᵀCw,  trace(C) = C₁₁ + C₂₂
+      </div>
+
+      <div class="instr">
+        <div class="mono" style="font-weight:700;">Instructions</div>
+        <ul>
+          <li>Select a dataset with the buttons at the top.</li>
+          <li>Move the slider to change θ and watch the projection and the variance curve update.</li>
+          <li>Toggle “Show orthogonal direction” to display w⊥ on the scatter and its variance curve on the plot.</li>
+          <li>Use “Centre” to illustrate when the identity Var(wᵀX) = wᵀCw holds for the covariance shown.</li>
+          <li>The scatter plot uses equal axis scaling (square aspect) to avoid geometric distortion.</li>
+        </ul>
+      </div>
+
+      <footer class="mono">(c) Fayyaz Minhas</footer>
+    </div>
+
+    <div class="canvGrid">
+      <div class="card">
+        <div class="small">Scatter: equal scaling on x and y, direction w through μ, projected points on the line, dotted connectors</div>
+        <canvas id="scatter"></canvas>
+      </div>
+      <div class="card">
+        <div class="small">Variance vs θ (y-axis shows range), with current θ marked</div>
+        <canvas id="varplot"></canvas>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const fmt = (x, d=6) => (Number.isFinite(x) ? x.toFixed(d) : "NaN");
+
+  // ---------------- RNG ----------------
+  function mulberry32(seed) {
+    let t = seed >>> 0;
+    return function() {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function randn(rng) {
+    let u = 0, v = 0;
+    while (u === 0) u = rng();
+    while (v === 0) v = rng();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+  function randu(rng, a=0, b=1) { return a + (b-a) * rng(); }
+
+  // ---------------- Basic stats ----------------
+  function mean2(X) {
+    const n = X.length;
+    let mx = 0, my = 0;
+    for (const p of X) { mx += p[0]; my += p[1]; }
+    return [mx / n, my / n];
+  }
+  function std2(X, mu) {
+    const n = X.length;
+    let vx = 0, vy = 0;
+    for (const p of X) {
+      const dx = p[0] - mu[0];
+      const dy = p[1] - mu[1];
+      vx += dx * dx;
+      vy += dy * dy;
+    }
+    const sx = Math.sqrt(vx / n) || 1;
+    const sy = Math.sqrt(vy / n) || 1;
+    return [sx, sy];
+  }
+  function standardiseXY(X) {
+    const mu = mean2(X);
+    const sd = std2(X, mu);
+    const sx = sd[0], sy = sd[1];
+    const Y = X.map(p => [(p[0] - mu[0]) / sx, (p[1] - mu[1]) / sy]);
+    return { Y };
+  }
+
+  // ---------------- Linear algebra ----------------
+  function covarianceMatrix(X, mu) {
+    const n = X.length;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const p of X) {
+      const dx = p[0] - mu[0];
+      const dy = p[1] - mu[1];
+      sxx += dx * dx;
+      sxy += dx * dy;
+      syy += dy * dy;
+    }
+    const invn = 1 / n;
+    return [[sxx * invn, sxy * invn],[sxy * invn, syy * invn]];
+  }
+  function projections(X, w, mu, centreOn) {
+    const n = X.length;
+    const z = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const dx = X[i][0] - (centreOn ? mu[0] : 0);
+      const dy = X[i][1] - (centreOn ? mu[1] : 0);
+      z[i] = w[0] * dx + w[1] * dy;
+    }
+    return z;
+  }
+  function variance1D(z) {
+    const n = z.length;
+    let m = 0;
+    for (const v of z) m += v;
+    m /= n;
+    let s = 0;
+    for (const v of z) {
+      const d = v - m;
+      s += d * d;
+    }
+    return s / n;
+  }
+  function quadForm(w, C) {
+    const a = C[0][0], b = C[0][1], d = C[1][1];
+    const wx = w[0], wy = w[1];
+    return a * wx * wx + 2 * b * wx * wy + d * wy * wy;
+  }
+
+  // ---------------- Crisp canvas ----------------
+  function resizeCanvasExact(canvas, aspectW, aspectH) {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round(rect.width));
+    const cssH = Math.max(1, Math.round(cssW * (aspectH / aspectW)));
+    canvas.style.height = cssH + "px";
+
+    const pxW = Math.max(1, Math.round(cssW * dpr));
+    const pxH = Math.max(1, Math.round(cssH * dpr));
+
+    if (canvas.width !== pxW || canvas.height !== pxH) {
+      canvas.width = pxW;
+      canvas.height = pxH;
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+
+    return { ctx, W: pxW, H: pxH, dpr };
+  }
+  function crispStroke1px(ctx) { ctx.translate(0.5, 0.5); }
+
+  // ---------------- Plot transforms ----------------
+  // Scatter: enforce equal scaling by using a single scale factor for both axes and centring the plot.
+  function computeSquareWorldBox(points) {
+    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+    for (const p of points) {
+      xmin = Math.min(xmin, p[0]); xmax = Math.max(xmax, p[0]);
+      ymin = Math.min(ymin, p[1]); ymax = Math.max(ymax, p[1]);
+    }
+    const cx = 0.5 * (xmin + xmax);
+    const cy = 0.5 * (ymin + ymax);
+    const span = Math.max(xmax - xmin, ymax - ymin) || 1;
+    const half = 0.5 * span * 1.12;
+    return { xmin: cx - half, xmax: cx + half, ymin: cy - half, ymax: cy + half };
+  }
+
+  function makeEqualMapper(W, H, pad, box) {
+    const dx = (box.xmax - box.xmin) || 1;
+    const dy = (box.ymax - box.ymin) || 1;
+
+    const availW = Math.max(1, W - 2*pad);
+    const availH = Math.max(1, H - 2*pad);
+
+    // single pixels-per-world-unit scale, chosen to fit in both dimensions
+    const s = Math.min(availW / dx, availH / dy);
+
+    // actual drawn rectangle size
+    const drawW = s * dx;
+    const drawH = s * dy;
+
+    // centre inside the padded area
+    const ox = pad + 0.5 * (availW - drawW);
+    const oy = pad + 0.5 * (availH - drawH);
+
+    return function worldToCanvasPx(p) {
+      const x = ox + (p[0] - box.xmin) * s;
+      const y = (oy + drawH) - (p[1] - box.ymin) * s;
+      return [x, y];
+    };
+  }
+
+  function drawAxesEqual(ctx, W, H, pad, box) {
+    // axes of the *plot rectangle* (not necessarily entire canvas)
+    const mapper = makeEqualMapper(W, H, pad, box);
+    const bl = mapper([box.xmin, box.ymin]);
+    const tl = mapper([box.xmin, box.ymax]);
+    const br = mapper([box.xmax, box.ymin]);
+
+    ctx.save();
+    crispStroke1px(ctx);
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tl[0], tl[1]);
+    ctx.lineTo(bl[0], bl[1]);
+    ctx.lineTo(br[0], br[1]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawAxes(ctx, W, H, pad) {
+    ctx.save();
+    crispStroke1px(ctx);
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad, pad);
+    ctx.lineTo(pad, H - pad);
+    ctx.lineTo(W - pad, H - pad);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------------- Datasets ----------------
+  const DATASETS = [
+    { id: "line_pos",  label: "Line +", info: "Nearly 1D with positive slope." },
+    { id: "gauss_pos", label: "Gauss +", info: "Elliptical Gaussian with positive correlation." },
+    { id: "gauss_iso", label: "Gauss 0", info: "Nearly isotropic Gaussian." },
+    { id: "gauss_neg", label: "Gauss −", info: "Elliptical Gaussian with negative correlation." },
+    { id: "line_neg",  label: "Line −", info: "Nearly 1D with negative slope." },
+    { id: "w_shape",   label: "W",      info: "Non-linear W manifold." },
+    { id: "square",    label: "Square", info: "Uniform axis-aligned square." },
+    { id: "diamond",   label: "Diamond",info: "Uniform rotated square." },
+    { id: "u_shape",   label: "U",      info: "Parabola-like U shape." },
+    { id: "x_shape",   label: "X",      info: "Two crossing lines." },
+    { id: "ring",      label: "Ring",   info: "Annulus (circle band)." },
+    { id: "clusters4", label: "4 blobs",info: "Four separated Gaussian clusters." },
+  ];
+
+  function sampleDatasetRaw(id, n, seed) {
+    const rng = mulberry32(seed);
+    const pts = [];
+    const noise = () => 0.05 * randn(rng);
+
+    if (id === "line_pos" || id === "line_neg") {
+      const sign = (id === "line_pos") ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const t = randu(rng, -2.2, 2.2);
+        pts.push([t + 0.08*randn(rng), sign*t + 0.08*randn(rng)]);
+      }
+      return pts;
+    }
+
+    if (id === "gauss_pos" || id === "gauss_neg" || id === "gauss_iso") {
+      const rho = (id === "gauss_pos") ? 0.85 : (id === "gauss_neg" ? -0.85 : 0.05);
+      const sx = 1.6, sy = 0.8;
+      const ang = 20 * Math.PI/180;
+      const c = Math.cos(ang), s = Math.sin(ang);
+
+      for (let i = 0; i < n; i++) {
+        const x0 = randn(rng) * sx;
+        const e  = randn(rng);
+        const y0 = rho * (sy / sx) * x0 + Math.sqrt(Math.max(0, 1 - rho*rho)) * sy * e;
+        const x = c*x0 - s*y0;
+        const y = s*x0 + c*y0;
+        pts.push([x, y]);
+      }
+      return pts;
+    }
+
+    if (id === "w_shape") {
+      for (let i = 0; i < n; i++) {
+        const t = randu(rng, -Math.PI, Math.PI);
+        const x = t + 0.18 * randn(rng);
+        const y = (Math.abs(Math.sin(t)) - 0.5) * 2.0 + 0.12 * randn(rng);
+        pts.push([x, y]);
+      }
+      return pts;
+    }
+
+    if (id === "square") {
+      for (let i = 0; i < n; i++) {
+        pts.push([randu(rng, -1.6, 1.6) + noise(), randu(rng, -1.6, 1.6) + noise()]);
+      }
+      return pts;
+    }
+
+    if (id === "diamond") {
+      const ang = 45 * Math.PI/180;
+      const c = Math.cos(ang), s = Math.sin(ang);
+      for (let i = 0; i < n; i++) {
+        const u = randu(rng, -1.3, 1.3);
+        const v = randu(rng, -1.3, 1.3);
+        pts.push([c*u - s*v + noise(), s*u + c*v + noise()]);
+      }
+      return pts;
+    }
+
+    if (id === "u_shape") {
+      for (let i = 0; i < n; i++) {
+        const x = randu(rng, -2.0, 2.0);
+        const y = 0.55 * (x*x) - 1.6;
+        pts.push([x + 0.08*randn(rng), y + 0.18*randn(rng)]);
+      }
+      return pts;
+    }
+
+    if (id === "x_shape") {
+      for (let i = 0; i < n; i++) {
+        const t = randu(rng, -2.2, 2.2);
+        if (rng() < 0.5) pts.push([t + 0.07*randn(rng),  t + 0.07*randn(rng)]);
+        else             pts.push([t + 0.07*randn(rng), -t + 0.07*randn(rng)]);
+      }
+      return pts;
+    }
+
+    if (id === "ring") {
+      for (let i = 0; i < n; i++) {
+        const a = randu(rng, 0, 2*Math.PI);
+        const r = 1.7 + 0.12*randn(rng);
+        pts.push([r*Math.cos(a), r*Math.sin(a)]);
+      }
+      return pts;
+    }
+
+    if (id === "clusters4") {
+      const centres = [[-1.4,-1.2],[1.4,-1.1],[-1.1,1.3],[1.2,1.2]];
+      for (let i = 0; i < n; i++) {
+        const k = Math.floor(randu(rng, 0, centres.length));
+        const c0 = centres[k];
+        pts.push([c0[0] + 0.22*randn(rng), c0[1] + 0.22*randn(rng)]);
+      }
+      return pts;
+    }
+
+    for (let i = 0; i < n; i++) pts.push([randn(rng), randn(rng)]);
+    return pts;
+  }
+
+  // ---------------- Drawing: scatter (equal scaling) ----------------
+  function drawScatter(canvas, X, mu, w, wOrtho, opts) {
+    const { centreOn, showProj, showOrtho } = opts;
+    const { ctx, W, H, dpr } = resizeCanvasExact(canvas, 16, 9);
+    const pad = Math.round(28 * dpr);
+
+    const box = computeSquareWorldBox([...X, mu]);
+    const toPx = makeEqualMapper(W, H, pad, box);
+
+    ctx.clearRect(0, 0, W, H);
+    drawAxesEqual(ctx, W, H, pad, box);
+
+    // points
+    ctx.save();
+    ctx.globalAlpha = 0.70;
+    const r = Math.max(2, Math.round(2.2 * dpr));
+    for (const p of X) {
+      const [cx, cy] = toPx(p);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2*Math.PI);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // mean
+    const [mx, my] = toPx(mu);
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(mx, my, Math.max(4, Math.round(4.2*dpr)), 0, 2*Math.PI);
+    ctx.fill();
+    ctx.restore();
+
+    const span = Math.max(box.xmax - box.xmin, box.ymax - box.ymin);
+    const L = span * 0.95;
+
+    // w (solid)
+    {
+      const p0 = [mu[0] - L*w[0], mu[1] - L*w[1]];
+      const p1 = [mu[0] + L*w[0], mu[1] + L*w[1]];
+      const c0 = toPx(p0);
+      const c1 = toPx(p1);
+
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = Math.max(2, Math.round(3*dpr));
+      ctx.beginPath();
+      ctx.moveTo(c0[0], c0[1]);
+      ctx.lineTo(c1[0], c1[1]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // w⊥ (dotted)
+    if (showOrtho) {
+      const p0 = [mu[0] - L*wOrtho[0], mu[1] - L*wOrtho[1]];
+      const p1 = [mu[0] + L*wOrtho[0], mu[1] + L*wOrtho[1]];
+      const c0 = toPx(p0);
+      const c1 = toPx(p1);
+
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = Math.max(1, Math.round(2*dpr));
+      ctx.setLineDash([Math.max(6, Math.round(6*dpr)), Math.max(6, Math.round(6*dpr))]);
+      crispStroke1px(ctx);
+      ctx.beginPath();
+      ctx.moveTo(c0[0], c0[1]);
+      ctx.lineTo(c1[0], c1[1]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (showProj) {
+      const base = centreOn ? mu : [0,0];
+      const z = projections(X, w, mu, centreOn);
+
+      // connectors
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = Math.max(1, Math.round(1.0*dpr));
+      ctx.setLineDash([Math.max(2, Math.round(2*dpr)), Math.max(4, Math.round(5*dpr))]);
+      crispStroke1px(ctx);
+      for (let i = 0; i < X.length; i++) {
+        const proj = [base[0] + z[i]*w[0], base[1] + z[i]*w[1]];
+        const a = toPx(X[i]);
+        const b = toPx(proj);
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // projected dots
+      ctx.save();
+      ctx.globalAlpha = 0.90;
+      ctx.setLineDash([]);
+      const rp = Math.max(2, Math.round(2.4*dpr));
+      for (let i = 0; i < X.length; i++) {
+        const proj = [base[0] + z[i]*w[0], base[1] + z[i]*w[1]];
+        const b = toPx(proj);
+        ctx.beginPath();
+        ctx.arc(b[0], b[1], rp, 0, 2*Math.PI);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  // ---------------- Drawing: variance plot ----------------
+  function drawVariancePlot(canvas, anglesDeg, varsW, varsOrtho, thetaDeg, vThetaW, vThetaOrtho, showOrtho) {
+    const { ctx, W, H, dpr } = resizeCanvasExact(canvas, 16, 6);
+    const pad = Math.round(40 * dpr);
+    ctx.clearRect(0, 0, W, H);
+
+    let vmin = Infinity, vmax = -Infinity;
+    for (const v of varsW) { vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    if (showOrtho) for (const v of varsOrtho) { vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    if (!Number.isFinite(vmin) || !Number.isFinite(vmax)) { vmin = 0; vmax = 1; }
+    if (Math.abs(vmax - vmin) < 1e-12) { vmax = vmin + 1; }
+
+    const padFrac = 0.06;
+    const vr0 = vmax - vmin;
+    vmin = vmin - padFrac * vr0;
+    vmax = vmax + padFrac * vr0;
+
+    drawAxes(ctx, W, H, pad);
+
+    const xMap = (theta) => pad + (theta/180) * (W - 2*pad);
+    const yMap = (v) => H - pad - ((v - vmin)/(vmax - vmin)) * (H - 2*pad);
+
+    // y ticks
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = Math.max(1, Math.round(1.0*dpr));
+    ctx.font = `${Math.max(11, Math.round(12*dpr))}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace`;
+    const ticks = 4;
+    for (let k = 0; k <= ticks; k++) {
+      const val = vmin + (k / ticks) * (vmax - vmin);
+      const y = yMap(val);
+      ctx.beginPath();
+      ctx.moveTo(pad - Math.round(6*dpr), y);
+      ctx.lineTo(pad, y);
+      ctx.stroke();
+      ctx.fillText(fmt(val, 3), Math.round(6*dpr), y + Math.round(4*dpr));
+    }
+    ctx.restore();
+
+    // w curve
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = Math.max(2, Math.round(2.5*dpr));
+    ctx.beginPath();
+    for (let i = 0; i < anglesDeg.length; i++) {
+      const x = xMap(anglesDeg[i]);
+      const y = yMap(varsW[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // w⊥ curve dotted
+    if (showOrtho) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = Math.max(1, Math.round(2.0*dpr));
+      ctx.setLineDash([Math.max(6, Math.round(6*dpr)), Math.max(6, Math.round(6*dpr))]);
+      crispStroke1px(ctx);
+      ctx.beginPath();
+      for (let i = 0; i < anglesDeg.length; i++) {
+        const x = xMap(anglesDeg[i]);
+        const y = yMap(varsOrtho[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const xt = xMap(thetaDeg);
+
+    // vertical marker
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = Math.max(1, Math.round(1.2*dpr));
+    ctx.setLineDash([Math.max(6, Math.round(6*dpr)), Math.max(6, Math.round(6*dpr))]);
+    crispStroke1px(ctx);
+    ctx.beginPath();
+    ctx.moveTo(xt, pad);
+    ctx.lineTo(xt, H - pad);
+    ctx.stroke();
+    ctx.restore();
+
+    // point markers
+    const ytW = yMap(vThetaW);
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(xt, ytW, Math.max(5, Math.round(6*dpr)), 0, 2*Math.PI);
+    ctx.fill();
+    ctx.restore();
+
+    if (showOrtho) {
+      const ytO = yMap(vThetaOrtho);
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.arc(xt, ytO, Math.max(5, Math.round(6*dpr)), 0, 2*Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // x ticks
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    ctx.lineWidth = Math.max(1, Math.round(1.0*dpr));
+    ctx.font = `${Math.max(11, Math.round(12*dpr))}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace`;
+    for (const t of [0, 45, 90, 135, 180]) {
+      const x = xMap(t);
+      ctx.beginPath();
+      ctx.moveTo(x, H - pad);
+      ctx.lineTo(x, H - pad + Math.round(6*dpr));
+      ctx.stroke();
+      ctx.fillText(String(t) + "°", x - Math.round(10*dpr), H - Math.round(8*dpr));
+    }
+    ctx.fillText("y-range: [" + fmt(vmin, 3) + ", " + fmt(vmax, 3) + "]", Math.round(12*dpr), Math.round(20*dpr));
+    ctx.restore();
+  }
+
+  // ---------------- UI: dataset buttons ----------------
+  const dsGrid = document.getElementById("dsGrid");
+  const dsInfoEl = document.getElementById("dsInfo");
+  const DATASETS_UI = [
+    { id: "line_pos",  label: "Line +", info: "Nearly 1D with positive slope." },
+    { id: "gauss_pos", label: "Gauss +", info: "Elliptical Gaussian with positive correlation." },
+    { id: "gauss_iso", label: "Gauss 0", info: "Nearly isotropic Gaussian." },
+    { id: "gauss_neg", label: "Gauss −", info: "Elliptical Gaussian with negative correlation." },
+    { id: "line_neg",  label: "Line −", info: "Nearly 1D with negative slope." },
+    { id: "w_shape",   label: "W",      info: "Non-linear W manifold." },
+    { id: "square",    label: "Square", info: "Uniform axis-aligned square." },
+    { id: "diamond",   label: "Diamond",info: "Uniform rotated square." },
+    { id: "u_shape",   label: "U",      info: "Parabola-like U shape." },
+    { id: "x_shape",   label: "X",      info: "Two crossing lines." },
+    { id: "ring",      label: "Ring",   info: "Annulus (circle band)." },
+    { id: "clusters4", label: "4 blobs",info: "Four separated Gaussian clusters." },
+  ];
+
+  function renderDatasetButtons(activeId) {
+    dsGrid.innerHTML = "";
+    for (const ds of DATASETS_UI) {
+      const btn = document.createElement("button");
+      btn.className = "dsBtn" + (ds.id === activeId ? " active" : "");
+      btn.type = "button";
+      btn.textContent = ds.label;
+      btn.title = ds.info;
+      btn.addEventListener("click", () => setDataset(ds.id));
+      dsGrid.appendChild(btn);
+    }
+  }
+
+  // ---------------- DOM hooks ----------------
+  const angleEl = document.getElementById("angle");
+  const angleReadout = document.getElementById("angleReadout");
+  const wReadout = document.getElementById("wReadout");
+
+  const showOrthoEl = document.getElementById("showOrtho");
+
+  const nPtsEl = document.getElementById("nPts");
+  const nPtsReadout = document.getElementById("nPtsReadout");
+
+  const resampleBtn = document.getElementById("resample");
+  const centreBtn = document.getElementById("centreBtn");
+  const projBtn = document.getElementById("projBtn");
+
+  const scatter = document.getElementById("scatter");
+  const varplot = document.getElementById("varplot");
+
+  const varRawEl = document.getElementById("varRaw");
+  const varQuadEl = document.getElementById("varQuad");
+  const varDiffEl = document.getElementById("varDiff");
+  const varOrthoRawEl = document.getElementById("varOrthoRaw");
+  const varTotalEl = document.getElementById("varTotal");
+
+  const meanXYEl = document.getElementById("meanXY");
+  const stdXYEl = document.getElementById("stdXY");
+
+  const C11 = document.getElementById("C11");
+  const C12 = document.getElementById("C12");
+  const C21 = document.getElementById("C21");
+  const C22 = document.getElementById("C22");
+  const CPretty = document.getElementById("CPretty");
+
+  // ---------------- app state ----------------
+  let seed = 20260210;
+  let datasetId = "gauss_pos";
+  let centreOn = true;
+  let showProj = true;
+  let showOrtho = false;
+  let X = [];
+
+  function currentW(thetaDeg) {
+    const th = thetaDeg * Math.PI / 180;
+    return [Math.cos(th), Math.sin(th)];
+  }
+  function currentWOrtho(thetaDeg) {
+    const th = thetaDeg * Math.PI / 180;
+    return [-Math.sin(th), Math.cos(th)];
+  }
+
+  function resample() {
+    seed = (seed + 1337) >>> 0;
+    const n = parseInt(nPtsEl.value, 10);
+    const raw = sampleDatasetRaw(datasetId, n, seed);
+    X = standardiseXY(raw).Y;
+  }
+
+  function setDataset(id) {
+    datasetId = id;
+    const ds = DATASETS_UI.find(d => d.id === id);
+    dsInfoEl.textContent = ds
+      ? (ds.info + "  Standardised so each axis has mean 0 and variance 1.")
+      : "Standardised so each axis has mean 0 and variance 1.";
+    renderDatasetButtons(datasetId);
+    resample();
+    recomputeAndRender();
+  }
+
+  function recomputeAndRender() {
+    const theta = parseFloat(angleEl.value);
+    const w = currentW(theta);
+    const wOrtho = currentWOrtho(theta);
+
+    const mu = mean2(X);
+    const sdNow = std2(X, mu);
+    const C = covarianceMatrix(X, mu);
+    const traceC = C[0][0] + C[1][1];
+
+    const zW = projections(X, w, mu, centreOn);
+    const vRawW = variance1D(zW);
+    const vQuadW = centreOn ? quadForm(w, C) : quadForm(w, covarianceMatrix(X, [0,0]));
+    const diff = Math.abs(vRawW - vQuadW);
+
+    const zO = projections(X, wOrtho, mu, centreOn);
+    const vRawO = variance1D(zO);
+
+    angleReadout.textContent = "θ = " + theta.toFixed(1) + "°";
+    wReadout.textContent =
+      "w = (" + fmt(w[0], 3) + ", " + fmt(w[1], 3) + ")   w⊥ = (" + fmt(wOrtho[0], 3) + ", " + fmt(wOrtho[1], 3) + ")";
+
+    nPtsReadout.textContent = "n = " + String(parseInt(nPtsEl.value, 10));
+
+    varRawEl.textContent = fmt(vRawW, 6);
+    varQuadEl.textContent = fmt(vQuadW, 6);
+    varDiffEl.textContent = fmt(diff, 6);
+    varOrthoRawEl.textContent = fmt(vRawO, 6);
+    varTotalEl.textContent = fmt(traceC, 6);
+
+    meanXYEl.textContent = "(" + fmt(mu[0], 6) + ", " + fmt(mu[1], 6) + ")";
+    stdXYEl.textContent = "(" + fmt(sdNow[0], 6) + ", " + fmt(sdNow[1], 6) + ")";
+
+    C11.textContent = fmt(C[0][0], 6);
+    C12.textContent = fmt(C[0][1], 6);
+    C21.textContent = fmt(C[1][0], 6);
+    C22.textContent = fmt(C[1][1], 6);
+    CPretty.textContent = "[ " + fmt(C[0][0], 6) + "  " + fmt(C[0][1], 6) + " ;  " + fmt(C[1][0], 6) + "  " + fmt(C[1][1], 6) + " ]";
+
+    drawScatter(scatter, X, mu, w, wOrtho, { centreOn, showProj, showOrtho });
+
+    const angles = [];
+    const varsW = [];
+    const varsO = [];
+    for (let t = 0; t <= 180; t += 1) {
+      const wt = currentW(t);
+      const wot = currentWOrtho(t);
+      angles.push(t);
+      varsW.push(variance1D(projections(X, wt, mu, centreOn)));
+      if (showOrtho) varsO.push(variance1D(projections(X, wot, mu, centreOn)));
+    }
+    drawVariancePlot(varplot, angles, varsW, varsO, theta, vRawW, vRawO, showOrtho);
+  }
+
+  // ---------------- init ----------------
+  renderDatasetButtons(datasetId);
+  setDataset(datasetId);
+
+  const ro = new ResizeObserver(() => recomputeAndRender());
+  ro.observe(scatter);
+  ro.observe(varplot);
+
+  // ---------------- events ----------------
+  angleEl.addEventListener("input", recomputeAndRender);
+
+  showOrthoEl.addEventListener("change", () => {
+    showOrtho = !!showOrthoEl.checked;
+    recomputeAndRender();
+  });
+
+  nPtsEl.addEventListener("input", () => {
+    nPtsReadout.textContent = "n = " + String(parseInt(nPtsEl.value, 10));
+  });
+  nPtsEl.addEventListener("change", () => {
+    resample();
+    recomputeAndRender();
+  });
+
+  resampleBtn.addEventListener("click", () => {
+    resample();
+    recomputeAndRender();
+  });
+
+  centreBtn.addEventListener("click", () => {
+    centreOn = !centreOn;
+    centreBtn.textContent = "Centre: " + (centreOn ? "on" : "off");
+    recomputeAndRender();
+  });
+
+  projBtn.addEventListener("click", () => {
+    showProj = !showProj;
+    projBtn.textContent = "Projection: " + (showProj ? "on" : "off");
+    recomputeAndRender();
+  });
+})();
+</script>
+</body>
+</html>
