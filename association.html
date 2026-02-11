@@ -54,12 +54,7 @@
     .plotGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     @media (max-width: 900px) { .plotGrid { grid-template-columns: 1fr; } }
 
-    /* Stacked joint plots */
-    .stackGrid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-    }
+    .stackGrid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 
     canvas {
       width: 100%;
@@ -89,8 +84,14 @@
       <label>Noise (dataset-dependent): <span class="mono" id="noiseLabel"></span></label>
       <input id="noiseSlider" type="range" min="0" max="1" value="0.15" step="0.01" />
 
-      <label>Binning for information measures (equal-count quantile bins): <span class="mono" id="binsLabel"></span></label>
+      <label>Number of bins: <span class="mono" id="binsLabel"></span></label>
       <input id="binsSlider" type="range" min="2" max="12" value="6" step="1" />
+
+      <label>Binning scheme</label>
+      <div class="row">
+        <button class="btn" id="binModeWidthBtn">Equal width</button>
+        <button class="btn" id="binModeQuantileBtn">Quantile (equal count)</button>
+      </div>
 
       <div class="row" style="margin-top:10px;">
         <button class="btn" id="regenBtn">Regenerate</button>
@@ -111,12 +112,14 @@
           Mutual information: $$I(X;Y)=D_{KL}(P_{XY}\|P_XP_Y)$$
           Total correlation (two variables): $$TC(X,Y)=H(X)+H(Y)-H(X,Y)=I(X;Y)$$
         </div>
+        <div style="margin-top:8px;">
+          Note: with <b>quantile binning</b>, the marginals are (approximately) uniform by construction, so $P(X)$ and $P(Y)$ will look flat even for strongly non-Gaussian data.
+        </div>
       </div>
 
       <hr style="border:none;border-top:1px solid rgba(127,127,127,0.35); margin:12px 0;">
 
       <div class="kv" id="statsBox"></div>
-
       <div class="footer">(c) Fayyaz Minhas</div>
     </div>
 
@@ -126,7 +129,7 @@
         <div style="font-size:14px; margin-bottom:8px;"><b>Scatter plot</b> (axis locked to square)</div>
         <canvas id="scatter" width="900" height="900" aria-label="scatter"></canvas>
         <div class="small" style="margin-top:8px;">
-          Below: compare observed $P(X,Y)$ with the independence model $Q(X,Y)=P(X)P(Y)$ using the same colour scale.
+          Stacked: observed $P(X,Y)$ and independence model $Q(X,Y)=P(X)P(Y)$ (same colour scale). Values shown as probabilities with two decimals.
         </div>
       </div>
 
@@ -205,6 +208,10 @@ function normalise2D(xs, ys) {
   return { x: x2, y: y2 };
 }
 
+/* -------------------------
+   Binning edges
+   ------------------------- */
+
 function quantileEdges(values, bins) {
   const v = [...values].sort((a,b)=>a-b);
   const edges = [];
@@ -222,6 +229,19 @@ function quantileEdges(values, bins) {
   return edges;
 }
 
+function widthEdges(values, bins) {
+  let mn = Infinity, mx = -Infinity;
+  for (const v of values) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  if (mn === mx) { mn -= 1; mx += 1; }
+  const edges = [];
+  for (let k = 0; k <= bins; k++) edges.push(mn + k*(mx-mn)/bins);
+  // ensure strict increase
+  for (let i = 1; i < edges.length; i++) {
+    if (edges[i] <= edges[i-1]) edges[i] = edges[i-1] + 1e-12;
+  }
+  return edges;
+}
+
 function binIndex(val, edges) {
   const bins = edges.length - 1;
   if (val <= edges[0]) return 0;
@@ -229,6 +249,10 @@ function binIndex(val, edges) {
   for (let i = 0; i < bins; i++) if (val >= edges[i] && val < edges[i+1]) return i;
   return bins - 1;
 }
+
+/* -------------------------
+   Information utilities
+   ------------------------- */
 
 function entropyBits(probFlat) {
   let h = 0;
@@ -267,7 +291,11 @@ function toFixedSmart(x) {
   return x.toFixed(2);
 }
 
-/* ---------- Canvas drawing (crisp) ---------- */
+function fmt2(p) { return isFinite(p) ? p.toFixed(2) : "NaN"; }
+
+/* -------------------------
+   Canvas drawing (crisp)
+   ------------------------- */
 
 function setupHiDPICanvas(canvas) {
   const dpr = window.devicePixelRatio || 1;
@@ -410,45 +438,72 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft, titleTop, titleR
 
   const vmax = vmaxOverride !== null ? vmaxOverride : Math.max(...Pxy.flat(), 1e-12);
 
-  // top Py
+  function textColourForAlpha(a) {
+    return (a > 0.55) ? "rgba(255,255,255,0.92)" : "rgba(0,0,0,0.78)";
+  }
+
+  // top Py (with numbers)
   ctx.strokeStyle = "rgba(127,127,127,0.6)";
   ctx.fillStyle = "rgba(40,120,255,0.55)";
   const barW = topW / by;
   const maxPy = Math.max(...Py, 1e-12);
+
   for (let j = 0; j < by; j++) {
     const v = Py[j];
-    const bh = v / maxPy * (topHH - 18);
+    const bh = v / maxPy * (topHH - 22);
     const x0 = topX0 + j*barW;
     const y0 = (topY0 + topHH - 10) - bh;
     ctx.fillRect(x0, y0, barW - 2, bh);
     ctx.strokeRect(x0, y0, barW - 2, bh);
+
+    ctx.fillStyle = "rgba(127,127,127,0.92)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(fmt2(v), x0 + (barW - 2) / 2, topY0 + topHH - 6);
   }
 
-  // right Px
+  // right Px (with numbers)
   const barH = rightH / bx;
   const maxPx = Math.max(...Px, 1e-12);
+
   for (let i = 0; i < bx; i++) {
     const v = Px[i];
-    const bw = v / maxPx * (rightWW - 18);
+    const bw = v / maxPx * (rightWW - 30);
     const y0 = rightY0 + i*barH;
     const x0 = rightX0 + 8;
+    ctx.fillStyle = "rgba(40,120,255,0.55)";
     ctx.fillRect(x0, y0, bw, barH - 2);
+    ctx.strokeStyle = "rgba(127,127,127,0.6)";
     ctx.strokeRect(x0, y0, bw, barH - 2);
+
+    ctx.fillStyle = "rgba(127,127,127,0.92)";
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(fmt2(v), rightX0 + rightWW - 6, y0 + (barH - 2)/2);
   }
 
-  // heat
+  // heatmap (with numbers)
   const cellW = heatW / by;
   const cellH = heatH / bx;
+
   for (let i = 0; i < bx; i++) {
     for (let j = 0; j < by; j++) {
       const p = Pxy[i][j];
-      const a = clamp(p / vmax, 0, 1);
-      ctx.fillStyle = `rgba(40,120,255,${0.08 + 0.82*a})`;
+      const a0 = 0.08 + 0.82 * clamp(p / vmax, 0, 1);
+      ctx.fillStyle = `rgba(40,120,255,${a0})`;
       const x0 = heatX0 + j*cellW;
       const y0 = heatY0 + i*cellH;
       ctx.fillRect(x0, y0, cellW, cellH);
       ctx.strokeStyle = "rgba(127,127,127,0.25)";
       ctx.strokeRect(x0, y0, cellW, cellH);
+
+      ctx.fillStyle = textColourForAlpha(a0);
+      ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(fmt2(p), x0 + cellW/2, y0 + cellH/2);
     }
   }
 
@@ -461,12 +516,18 @@ function drawJointWithMarginals(canvas, Pxy, Px, Py, titleLeft, titleTop, titleR
 
   ctx.fillStyle = "rgba(127,127,127,0.9)";
   ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
   ctx.fillText(titleTop, topX0 + 6, topY0 + 14);
   ctx.fillText(titleRight, rightX0 + 6, rightY0 + 14);
   ctx.fillText(titleLeft, heatX0 + 6, heatY0 - 10);
+
+  ctx.textAlign = "left";
 }
 
-/* ---------- Datasets ---------- */
+/* -------------------------
+   Datasets
+   ------------------------- */
 
 const DATASETS = [
   { key: "ind_gauss", name: "Independent Gaussian" },
@@ -537,7 +598,9 @@ function generateDataset(key, n, noise, rng) {
   return { x, y };
 }
 
-/* ---------- Compute measures ---------- */
+/* -------------------------
+   Compute measures
+   ------------------------- */
 
 let state = {
   datasetKey: "ind_gauss",
@@ -545,10 +608,11 @@ let state = {
   noise: 0.15,
   bins: 6,
   normaliseOn: true,
+  binMode: "width",   // "width" | "quantile"
   seed: 7
 };
 
-function computeAll(xRaw, yRaw, bins) {
+function computeAll(xRaw, yRaw, bins, binMode) {
   const n = xRaw.length;
 
   const mx = mean(xRaw), my = mean(yRaw);
@@ -560,8 +624,8 @@ function computeAll(xRaw, yRaw, bins) {
   const C = [[vx, cov],[cov, vy]];
   const R = [[1, rho],[rho, 1]];
 
-  const ex = quantileEdges(xRaw, bins);
-  const ey = quantileEdges(yRaw, bins);
+  const ex = (binMode === "quantile") ? quantileEdges(xRaw, bins) : widthEdges(xRaw, bins);
+  const ey = (binMode === "quantile") ? quantileEdges(yRaw, bins) : widthEdges(yRaw, bins);
 
   const counts = Array.from({length: bins}, () => Array.from({length: bins}, () => 0));
   const cx = new Array(bins).fill(0);
@@ -590,10 +654,12 @@ function computeAll(xRaw, yRaw, bins) {
   const MI = mutualInformationFromTables(Pxy, Px, Py);
   const TC = Hx + Hy - Hxy;
 
-  return { n, mx, my, vx, vy, cov, rho, C, R, bins, Px, Py, Pxy, Qxy, Hx, Hy, Hxy, KL, MI, TC };
+  return { n, mx, my, vx, vy, cov, rho, C, R, bins, binMode, Px, Py, Pxy, Qxy, Hx, Hy, Hxy, KL, MI, TC };
 }
 
-/* ---------- UI ---------- */
+/* -------------------------
+   UI
+   ------------------------- */
 
 const elButtons = document.getElementById("datasetButtons");
 const elN = document.getElementById("nSlider");
@@ -603,8 +669,9 @@ const elNLabel = document.getElementById("nLabel");
 const elNoiseLabel = document.getElementById("noiseLabel");
 const elBinsLabel = document.getElementById("binsLabel");
 const elStats = document.getElementById("statsBox");
-const elRegen = document.getElementById("regenBtn");
 const elNormBtn = document.getElementById("toggleNormaliseBtn");
+const elWidthBtn = document.getElementById("binModeWidthBtn");
+const elQuantBtn = document.getElementById("binModeQuantileBtn");
 
 function renderButtons() {
   elButtons.innerHTML = "";
@@ -627,6 +694,9 @@ function setLabels() {
   elNoiseLabel.textContent = toFixedSmart(state.noise);
   elBinsLabel.textContent = String(state.bins);
   elNormBtn.textContent = "Normalise: " + (state.normaliseOn ? "ON" : "OFF");
+
+  elWidthBtn.classList.toggle("active", state.binMode === "width");
+  elQuantBtn.classList.toggle("active", state.binMode === "quantile");
 }
 
 function matrixToHTML(name, M) {
@@ -653,16 +723,13 @@ function statsToHTML(s) {
 
   lines.push(`<div style="margin-top:8px;"><b>Information (binned)</b></div><div></div>`);
   lines.push(`<div>Bins</div><div class="mono">${s.bins} × ${s.bins}</div>`);
+  lines.push(`<div>Binning</div><div class="mono">${s.binMode}</div>`);
   lines.push(`<div>H(X) [bits]</div><div class="mono">${toFixedSmart(s.Hx)}</div>`);
   lines.push(`<div>H(Y) [bits]</div><div class="mono">${toFixedSmart(s.Hy)}</div>`);
   lines.push(`<div>H(X,Y) [bits]</div><div class="mono">${toFixedSmart(s.Hxy)}</div>`);
   lines.push(`<div>KL(P||PXPY) [bits]</div><div class="mono">${toFixedSmart(s.KL)}</div>`);
   lines.push(`<div>I(X;Y) [bits]</div><div class="mono">${toFixedSmart(s.MI)}</div>`);
   lines.push(`<div>TC(X,Y) [bits]</div><div class="mono">${toFixedSmart(s.TC)}</div>`);
-
-  lines.push(`<div style="grid-column:1 / -1; margin-top:6px; font-size:12px; opacity:0.9;">
-    The two stacked plots use the same colour scale so the deviation from independence is visually comparable.
-  </div>`);
   return lines.join("");
 }
 
@@ -678,7 +745,7 @@ function regenerate() {
     x = norm.x; y = norm.y;
   }
 
-  const stats = computeAll(x, y, state.bins);
+  const stats = computeAll(x, y, state.bins, state.binMode);
   elStats.innerHTML = statsToHTML(stats);
 
   drawScatter(document.getElementById("scatter"), x, y);
@@ -692,14 +759,19 @@ function regenerate() {
   if (window.MathJax && window.MathJax.typesetPromise) window.MathJax.typesetPromise();
 }
 
-/* ---------- Events ---------- */
+/* -------------------------
+   Events
+   ------------------------- */
 
 elN.addEventListener("input", () => { state.n = parseInt(elN.value, 10); setLabels(); });
 elNoise.addEventListener("input", () => { state.noise = parseFloat(elNoise.value); setLabels(); });
 elBins.addEventListener("input", () => { state.bins = parseInt(elBins.value, 10); setLabels(); });
 
-elRegen.addEventListener("click", () => regenerate());
+document.getElementById("regenBtn").addEventListener("click", () => regenerate());
 elNormBtn.addEventListener("click", () => { state.normaliseOn = !state.normaliseOn; setLabels(); regenerate(); });
+
+elWidthBtn.addEventListener("click", () => { state.binMode = "width"; setLabels(); regenerate(); });
+elQuantBtn.addEventListener("click", () => { state.binMode = "quantile"; setLabels(); regenerate(); });
 
 let tDebounce = null;
 function debounceRegen() {
