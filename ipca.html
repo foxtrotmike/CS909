@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PCA 2D demo: components, reconstruction, and vector sum for a selected point</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; line-height: 1.35; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    .wrap { display: grid; grid-template-columns: 440px 1fr; gap: 14px; align-items: start; }
+    .card { border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; padding: 12px; }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; margin: 8px 0; }
+    label { font-size: 13px; opacity: 0.9; }
+    input[type="range"] { width: 100%; }
+    select, button { padding: 6px 8px; border-radius: 10px; border: 1px solid rgba(127,127,127,0.35); background: transparent; }
+    .small { font-size: 12px; opacity: 0.85; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    canvas { width: 100%; height: 520px; border: 1px solid rgba(127,127,127,0.35); border-radius: 12px; background: rgba(127,127,127,0.06); }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(127,127,127,0.35); font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .legend { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; margin-top: 8px; }
+    .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(127,127,127,0.35); }
+    .foot { margin-top: 10px; font-size: 12px; opacity: 0.85; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin-top: 8px; }
+    .kv div { font-size: 12px; }
+    .hr { height: 1px; background: rgba(127,127,127,0.25); margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>PCA in 2D: choose components, see reconstruction and per-point vector sum</h1>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row">
+        <label for="dataset">Dataset</label>
+        <select id="dataset">
+          <option value="gauss">Correlated Gaussian</option>
+          <option value="twoclusters">Two clusters</option>
+          <option value="circle">Noisy circle</option>
+          <option value="spiral">Noisy spiral</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="n">Samples: <span id="nVal" class="mono"></span></label>
+        <input id="n" type="range" min="50" max="800" value="250" />
+      </div>
+
+      <div class="row">
+        <label for="noise">Noise: <span id="noiseVal" class="mono"></span></label>
+        <input id="noise" type="range" min="0" max="1" step="0.01" value="0.15" />
+      </div>
+
+      <div class="row">
+        <label for="seed">Seed: <span id="seedVal" class="mono"></span></label>
+        <input id="seed" type="range" min="0" max="999" value="7" />
+      </div>
+
+      <div class="grid2">
+        <div class="card" style="padding:10px;">
+          <div class="small"><b>Reconstruction components</b></div>
+          <div class="row" style="grid-template-columns:auto 1fr; margin: 10px 0 6px;">
+            <input id="usePC1" type="checkbox" checked />
+            <label for="usePC1">Include PC1</label>
+          </div>
+          <div class="row" style="grid-template-columns:auto 1fr; margin: 6px 0 0;">
+            <input id="usePC2" type="checkbox" />
+            <label for="usePC2">Include PC2</label>
+          </div>
+          <div class="foot">
+            Click a point to select it. You will see its decomposition:
+            <span class="mono">x = μ + z1·u1 + z2·u2</span>, and the reconstruction using selected PCs.
+          </div>
+        </div>
+
+        <div class="card" style="padding:10px;">
+          <div class="small"><b>View</b></div>
+          <div class="row" style="grid-template-columns:auto 1fr; margin: 10px 0 6px;">
+            <input id="showAxes" type="checkbox" checked />
+            <label for="showAxes">Show PC axes</label>
+          </div>
+          <div class="row" style="grid-template-columns:auto 1fr; margin: 6px 0 0;">
+            <input id="showLinks" type="checkbox" checked />
+            <label for="showLinks">Link x to x̂</label>
+          </div>
+          <div class="row" style="grid-template-columns:auto 1fr; margin: 6px 0 0;">
+            <input id="showVecSum" type="checkbox" checked />
+            <label for="showVecSum">Show vector sum (selected point)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top: 10px;">
+        <button id="regen">Regenerate</button>
+        <button id="centre" title="Auto fit view">Auto fit</button>
+      </div>
+
+      <div class="card" style="padding:10px; margin-top:10px;">
+        <div class="small"><b>Numbers</b></div>
+        <div class="chips" style="margin-top:8px;">
+          <span class="chip">λ1: <span id="lam1" class="mono"></span></span>
+          <span class="chip">λ2: <span id="lam2" class="mono"></span></span>
+          <span class="chip">Explained var PC1: <span id="ev1" class="mono"></span></span>
+          <span class="chip">Explained var PC2: <span id="ev2" class="mono"></span></span>
+          <span class="chip">MSE(x, x̂): <span id="mse" class="mono"></span></span>
+        </div>
+
+        <div class="legend">
+          <div class="swatch" id="swOrig"></div><div class="small">Original points x</div>
+          <div class="swatch" id="swRec"></div><div class="small">Reconstructed points x̂ from selected PCs</div>
+          <div class="swatch" id="swPC1"></div><div class="small">PC1 axis (u1)</div>
+          <div class="swatch" id="swPC2"></div><div class="small">PC2 axis (u2)</div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="small"><b>Selected point decomposition</b></div>
+        <div class="kv">
+          <div class="mono">x</div><div class="mono" id="selX">click a point</div>
+          <div class="mono">μ</div><div class="mono" id="selMu">-</div>
+          <div class="mono">z1 = u1ᵀ(x-μ)</div><div class="mono" id="selZ1">-</div>
+          <div class="mono">z2 = u2ᵀ(x-μ)</div><div class="mono" id="selZ2">-</div>
+          <div class="mono">z1·u1</div><div class="mono" id="selV1">-</div>
+          <div class="mono">z2·u2</div><div class="mono" id="selV2">-</div>
+          <div class="mono">x̂ (selected PCs)</div><div class="mono" id="selXhat">-</div>
+          <div class="mono">residual r = x - x̂</div><div class="mono" id="selRes">-</div>
+          <div class="mono">||r||²</div><div class="mono" id="selRes2">-</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <canvas id="cv" width="1200" height="520"></canvas>
+		<div class="small" style="margin-top:8px;">
+		  Tip: After selecting a point, toggle PC1/PC2 and watch how <span class="mono">x̂</span> changes as a sum of vectors from the mean.
+		</div>
+		<div class="small" style="margin-top:6px; opacity:0.8;">
+		  © Fayyaz Minhas
+		</div>
+
+    </div>
+  </div>
+
+  <script>
+    // --------------------------
+    // Small deterministic RNG
+    // --------------------------
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return function() {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function randn(rng) {
+      let u = 0, v = 0;
+      while (u === 0) u = rng();
+      while (v === 0) v = rng();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    // --------------------------
+    // Data generators (2D)
+    // --------------------------
+    function genData(type, n, noise, seed) {
+      const rng = mulberry32(seed);
+      const X = new Array(n);
+
+      if (type === "gauss") {
+        const a = 2.2, b = 0.8, rho = 0.85;
+        const A11 = a, A12 = 0;
+        const A21 = rho * b;
+        const A22 = b * Math.sqrt(Math.max(1e-9, 1 - rho*rho));
+        for (let i = 0; i < n; i++) {
+          const z1 = randn(rng), z2 = randn(rng);
+          let x = A11*z1 + A12*z2;
+          let y = A21*z1 + A22*z2;
+          x += noise * randn(rng);
+          y += noise * randn(rng);
+          X[i] = [x, y];
+        }
+      } else if (type === "twoclusters") {
+        const sep = 2.6;
+        for (let i = 0; i < n; i++) {
+          const c = (i < n/2) ? -sep : sep;
+          let x = c + 0.9 * randn(rng);
+          let y = 0.6 * randn(rng);
+          x += noise * randn(rng);
+          y += noise * randn(rng);
+          X[i] = [x, y];
+        }
+      } else if (type === "circle") {
+        for (let i = 0; i < n; i++) {
+          const t = 2 * Math.PI * rng();
+          const r = 2.3 + 0.3 * randn(rng);
+          let x = r * Math.cos(t);
+          let y = r * Math.sin(t);
+          x += noise * randn(rng);
+          y += noise * randn(rng);
+          X[i] = [x, y];
+        }
+      } else if (type === "spiral") {
+        for (let i = 0; i < n; i++) {
+          const t = 6 * Math.PI * rng();
+          const r = 0.25 * t;
+          let x = (r * Math.cos(t)) / 3.5;
+          let y = (r * Math.sin(t)) / 3.5;
+          x += noise * randn(rng);
+          y += noise * randn(rng);
+          X[i] = [x, y];
+        }
+      }
+      return X;
+    }
+
+    // --------------------------
+    // PCA for 2x2 covariance
+    // Returns mean mu, eigenvalues lam1>=lam2, eigenvectors u1,u2 (unit)
+    // --------------------------
+    function pca2D(X) {
+      const n = X.length;
+      let mx = 0, my = 0;
+      for (const [x,y] of X) { mx += x; my += y; }
+      mx /= n; my /= n;
+
+      let cxx = 0, cyy = 0, cxy = 0;
+      for (const [x,y] of X) {
+        const dx = x - mx, dy = y - my;
+        cxx += dx*dx;
+        cyy += dy*dy;
+        cxy += dx*dy;
+      }
+      cxx /= n; cyy /= n; cxy /= n;
+
+      const tr = cxx + cyy;
+      const det = cxx*cyy - cxy*cxy;
+      const disc = Math.max(0, tr*tr - 4*det);
+      const s = Math.sqrt(disc);
+      let lam1 = 0.5*(tr + s);
+      let lam2 = 0.5*(tr - s);
+
+      function eigvec(lam) {
+        if (Math.abs(cxy) < 1e-12) {
+          if (cxx >= cyy) return [1,0];
+          return [0,1];
+        }
+        let vx = cxy;
+        let vy = lam - cxx;
+        const norm = Math.hypot(vx, vy) || 1;
+        vx /= norm; vy /= norm;
+        return [vx, vy];
+      }
+      let u1 = eigvec(lam1);
+      let u2 = [-u1[1], u1[0]];
+
+      if (lam2 > lam1) {
+        const tmp = lam1; lam1 = lam2; lam2 = tmp;
+        const t2 = u1; u1 = u2; u2 = t2;
+      }
+
+      return { mu: [mx, my], lam1, lam2, u1, u2 };
+    }
+
+    // Reconstruct all points with chosen components
+    function reconstructAll(X, pca, use1, use2) {
+      const { mu, u1, u2 } = pca;
+      const n = X.length;
+      const Xhat = new Array(n);
+      let mse = 0;
+
+      for (let i = 0; i < n; i++) {
+        const dx = X[i][0] - mu[0];
+        const dy = X[i][1] - mu[1];
+
+        const z1 = dx*u1[0] + dy*u1[1];
+        const z2 = dx*u2[0] + dy*u2[1];
+
+        let rx = mu[0], ry = mu[1];
+        if (use1) { rx += z1*u1[0]; ry += z1*u1[1]; }
+        if (use2) { rx += z2*u2[0]; ry += z2*u2[1]; }
+
+        Xhat[i] = [rx, ry];
+        const ex = X[i][0] - rx;
+        const ey = X[i][1] - ry;
+        mse += ex*ex + ey*ey;
+      }
+      mse /= n;
+      return { Xhat, mse };
+    }
+
+    // Decompose a single point x into mu + z1 u1 + z2 u2 and reconstruct using selected PCs
+    function decomposePoint(x, pca, use1, use2) {
+      const { mu, u1, u2 } = pca;
+      const dx = x[0] - mu[0];
+      const dy = x[1] - mu[1];
+
+      const z1 = dx*u1[0] + dy*u1[1];
+      const z2 = dx*u2[0] + dy*u2[1];
+
+      const v1 = [z1*u1[0], z1*u1[1]];
+      const v2 = [z2*u2[0], z2*u2[1]];
+
+      let xhat = [mu[0], mu[1]];
+      if (use1) { xhat[0] += v1[0]; xhat[1] += v1[1]; }
+      if (use2) { xhat[0] += v2[0]; xhat[1] += v2[1]; }
+
+      const r = [x[0] - xhat[0], x[1] - xhat[1]];
+      const r2 = r[0]*r[0] + r[1]*r[1];
+
+      return { z1, z2, v1, v2, xhat, r, r2 };
+    }
+
+    // --------------------------
+    // Plotting utilities
+    // --------------------------
+    const cv = document.getElementById("cv");
+    const ctx = cv.getContext("2d");
+
+    function setLegendColours() {
+      document.getElementById("swOrig").style.background = "hsl(210 90% 55%)";
+      document.getElementById("swRec").style.background  = "hsl(20 90% 55%)";
+      document.getElementById("swPC1").style.background  = "hsl(140 70% 45%)";
+      document.getElementById("swPC2").style.background  = "hsl(280 70% 55%)";
+    }
+    setLegendColours();
+
+    let view = { cx: 0, cy: 0, scale: 90 };
+
+    function worldToScreen(x, y) {
+      const sx = (x - view.cx) * view.scale + cv.width/2;
+      const sy = (-(y - view.cy)) * view.scale + cv.height/2;
+      return [sx, sy];
+    }
+    function screenToWorld(sx, sy) {
+      const x = (sx - cv.width/2) / view.scale + view.cx;
+      const y = -((sy - cv.height/2) / view.scale) + view.cy;
+      return [x, y];
+    }
+
+    function autoFit(X, pad=1.15) {
+      let minx=Infinity, maxx=-Infinity, miny=Infinity, maxy=-Infinity;
+      for (const [x,y] of X) {
+        if (x<minx) minx=x; if (x>maxx) maxx=x;
+        if (y<miny) miny=y; if (y>maxy) maxy=y;
+      }
+      const cx = 0.5*(minx+maxx);
+      const cy = 0.5*(miny+maxy);
+      const rx = Math.max(1e-6, 0.5*(maxx-minx));
+      const ry = Math.max(1e-6, 0.5*(maxy-miny));
+      const s = Math.min(cv.width/(2*pad*rx), cv.height/(2*pad*ry));
+      view.cx = cx; view.cy = cy; view.scale = s;
+    }
+
+    function drawAxes() {
+      const [sx0, sy0] = worldToScreen(0,0);
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, sy0); ctx.lineTo(cv.width, sy0);
+      ctx.moveTo(sx0, 0); ctx.lineTo(sx0, cv.height);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawVectorThrough(mu, v, len, strokeStyle, alpha=0.85) {
+      const ax = mu[0] - len*v[0], ay = mu[1] - len*v[1];
+      const bx = mu[0] + len*v[0], by = mu[1] + len*v[1];
+      const [sax, say] = worldToScreen(ax, ay);
+      const [sbx, sby] = worldToScreen(bx, by);
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sax, say);
+      ctx.lineTo(sbx, sby);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPoints(X, fillStyle, r=3, alpha=0.9) {
+      ctx.save();
+      ctx.fillStyle = fillStyle;
+      ctx.globalAlpha = alpha;
+      for (const [x,y] of X) {
+        const [sx, sy] = worldToScreen(x,y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, 2*Math.PI);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawLinks(X, Xhat, strokeStyle, alpha=0.25) {
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < X.length; i++) {
+        const [x,y] = X[i];
+        const [xh,yh] = Xhat[i];
+        const [sx, sy] = worldToScreen(x,y);
+        const [sxh, syh] = worldToScreen(xh,yh);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sxh, syh);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawMean(mu) {
+      const [sx, sy] = worldToScreen(mu[0], mu[1]);
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 5, 0, 2*Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSelectedMarker(x, fillStyle) {
+      const [sx, sy] = worldToScreen(x[0], x[1]);
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = fillStyle;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 6, 0, 2*Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawArrow(from, to, strokeStyle, alpha=0.9, width=2) {
+      const [sx1, sy1] = worldToScreen(from[0], from[1]);
+      const [sx2, sy2] = worldToScreen(to[0], to[1]);
+
+      const dx = sx2 - sx1, dy = sy2 - sy1;
+      const L = Math.hypot(dx, dy);
+      if (L < 1e-6) return;
+
+      const ux = dx / L, uy = dy / L;
+      const head = Math.min(14, 0.35 * L);
+      const hx = sx2 - head * ux, hy = sy2 - head * uy;
+
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = width;
+
+      // shaft
+      ctx.beginPath();
+      ctx.moveTo(sx1, sy1);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+
+      // head
+      const ang = Math.atan2(uy, ux);
+      const a1 = ang + Math.PI * 0.85;
+      const a2 = ang - Math.PI * 0.85;
+      ctx.beginPath();
+      ctx.moveTo(sx2, sy2);
+      ctx.lineTo(sx2 + head*0.9*Math.cos(a1), sy2 + head*0.9*Math.sin(a1));
+      ctx.lineTo(sx2 + head*0.9*Math.cos(a2), sy2 + head*0.9*Math.sin(a2));
+      ctx.closePath();
+      ctx.fillStyle = strokeStyle;
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // --------------------------
+    // UI and state
+    // --------------------------
+    const el = (id) => document.getElementById(id);
+    function fmt(x) {
+      if (!isFinite(x)) return "NaN";
+      const ax = Math.abs(x);
+      if (ax >= 1000 || (ax > 0 && ax < 1e-3)) return x.toExponential(2);
+      return x.toFixed(4);
+    }
+    function fmt2(v) { return "[" + fmt(v[0]) + ", " + fmt(v[1]) + "]"; }
+
+    let X = [];
+    let selectedIndex = -1;
+
+    function regenerate() {
+      const type = el("dataset").value;
+      const n = parseInt(el("n").value, 10);
+      const noise = parseFloat(el("noise").value);
+      const seed = parseInt(el("seed").value, 10);
+      X = genData(type, n, noise, seed);
+      selectedIndex = 0; // pick first point by default
+      autoFit(X);
+      render();
+    }
+
+    function updateSelectedPanel(pca, dec) {
+      if (selectedIndex < 0 || selectedIndex >= X.length) {
+        el("selX").textContent = "click a point";
+        return;
+      }
+      el("selX").textContent = fmt2(X[selectedIndex]);
+      el("selMu").textContent = fmt2(pca.mu);
+      el("selZ1").textContent = fmt(dec.z1);
+      el("selZ2").textContent = fmt(dec.z2);
+      el("selV1").textContent = fmt2(dec.v1);
+      el("selV2").textContent = fmt2(dec.v2);
+      el("selXhat").textContent = fmt2(dec.xhat);
+      el("selRes").textContent = fmt2(dec.r);
+      el("selRes2").textContent = fmt(dec.r2);
+    }
+
+    function render() {
+      el("nVal").textContent = el("n").value;
+      el("noiseVal").textContent = el("noise").value;
+      el("seedVal").textContent = el("seed").value;
+
+      const pca = pca2D(X);
+      const tot = pca.lam1 + pca.lam2 + 1e-12;
+      const ev1 = pca.lam1 / tot;
+      const ev2 = pca.lam2 / tot;
+
+      const use1 = el("usePC1").checked;
+      const use2 = el("usePC2").checked;
+      const rec = reconstructAll(X, pca, use1, use2);
+
+      el("lam1").textContent = fmt(pca.lam1);
+      el("lam2").textContent = fmt(pca.lam2);
+      el("ev1").textContent = (100*ev1).toFixed(1) + "%";
+      el("ev2").textContent = (100*ev2).toFixed(1) + "%";
+      el("mse").textContent = fmt(rec.mse);
+
+      // Clear
+      ctx.clearRect(0,0,cv.width,cv.height);
+      drawAxes();
+
+      // PC axes
+      if (el("showAxes").checked) {
+        const len = Math.min(cv.width, cv.height) / view.scale * 0.45;
+        drawVectorThrough(pca.mu, pca.u1, len, "hsl(140 70% 45%)", 0.9);
+        drawVectorThrough(pca.mu, pca.u2, len, "hsl(280 70% 55%)", 0.8);
+      }
+
+      // Links
+      if (el("showLinks").checked) {
+        drawLinks(X, rec.Xhat, "hsl(0 0% 55%)", 0.18);
+      }
+
+      // Points
+      drawPoints(X, "hsl(210 90% 55%)", 3, 0.85);
+      drawPoints(rec.Xhat, "hsl(20 90% 55%)", 3, 0.85);
+
+      drawMean(pca.mu);
+
+      // Selected point: vector sum
+      if (selectedIndex >= 0 && selectedIndex < X.length) {
+        const x = X[selectedIndex];
+        const dec = decomposePoint(x, pca, use1, use2);
+        updateSelectedPanel(pca, dec);
+
+        // Mark selected x and xhat
+        drawSelectedMarker(x, "hsl(210 90% 55%)");
+        drawSelectedMarker(dec.xhat, "hsl(20 90% 55%)");
+
+        if (el("showVecSum").checked) {
+          // Draw arrows: μ -> μ + (use1? v1 : 0) -> xhat (then optional residual to x)
+          const mu = pca.mu;
+          const p1 = use1 ? [mu[0] + dec.v1[0], mu[1] + dec.v1[1]] : [mu[0], mu[1]];
+          const p2 = dec.xhat;
+
+          // μ arrow
+          drawArrow([mu[0] - 0.000001, mu[1] - 0.000001], mu, "hsl(0 0% 60%)", 0.0); // no-op
+
+          // μ -> μ + z1 u1
+          if (use1) drawArrow(mu, p1, "hsl(140 70% 45%)", 0.95, 3);
+
+          // (μ + z1 u1) -> xhat (this is z2 u2 if included, else 0)
+          if (use2) drawArrow(p1, p2, "hsl(280 70% 55%)", 0.95, 3);
+
+          // Residual (xhat -> x) in grey if any component missing
+          if (!(use1 && use2)) {
+            drawArrow(p2, x, "hsl(0 0% 65%)", 0.6, 2);
+          }
+
+          // Caption
+          ctx.save();
+          ctx.globalAlpha = 0.9;
+          ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+          const msg = "Selected point: x = μ + z1·u1 + z2·u2 ; reconstruction uses checked PCs";
+          ctx.fillText(msg, 14, 22);
+          ctx.restore();
+        }
+      } else {
+        el("selX").textContent = "click a point";
+      }
+    }
+
+    // Buttons
+    el("centre").addEventListener("click", () => { autoFit(X); render(); });
+    el("regen").addEventListener("click", regenerate);
+
+    // Live updates
+    ["dataset","n","noise","seed","usePC1","usePC2","showAxes","showLinks","showVecSum"].forEach(id => {
+      el(id).addEventListener("input", () => {
+        if (id === "dataset" || id === "n" || id === "noise" || id === "seed") {
+          const type = el("dataset").value;
+          const n = parseInt(el("n").value, 10);
+          const noise = parseFloat(el("noise").value);
+          const seed = parseInt(el("seed").value, 10);
+          X = genData(type, n, noise, seed);
+          selectedIndex = Math.min(selectedIndex, X.length - 1);
+          render();
+        } else {
+          render();
+        }
+      });
+    });
+
+    // Pan and zoom
+    let dragging = false;
+    let last = null;
+    cv.addEventListener("mousedown", (e) => { dragging = true; last = [e.offsetX, e.offsetY]; });
+    window.addEventListener("mouseup", () => { dragging = false; last = null; });
+    cv.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const cur = [e.offsetX, e.offsetY];
+      const dx = cur[0] - last[0];
+      const dy = cur[1] - last[1];
+      view.cx -= dx / view.scale;
+      view.cy += dy / view.scale;
+      last = cur;
+      render();
+    });
+    cv.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      view.scale = Math.max(10, Math.min(800, view.scale * factor));
+      render();
+    }, { passive: false });
+
+    // Select a point by clicking near it
+    function pickNearestPoint(mouseX, mouseY) {
+      const world = screenToWorld(mouseX, mouseY);
+      let best = -1;
+      let bestD2 = Infinity;
+
+      // Threshold in world units based on a few screen pixels
+      const thresh = (10 / view.scale);
+      const thresh2 = thresh * thresh;
+
+      for (let i = 0; i < X.length; i++) {
+        const dx = X[i][0] - world[0];
+        const dy = X[i][1] - world[1];
+        const d2 = dx*dx + dy*dy;
+        if (d2 < bestD2) { bestD2 = d2; best = i; }
+      }
+      if (bestD2 <= thresh2) return best;
+      return -1;
+    }
+
+    cv.addEventListener("click", (e) => {
+      const idx = pickNearestPoint(e.offsetX, e.offsetY);
+      if (idx >= 0) {
+        selectedIndex = idx;
+        render();
+      }
+    });
+
+    // Init
+    regenerate();
+  </script>
+</body>
+</html>
