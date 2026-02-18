@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TF.js Regression Demo: OLS, Regularisation, Epsilon-Insensitive</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 10px 0; font-size: 18px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+    .panel { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .controls { width: 380px; }
+    .plot { width: 620px; }
+    label { display: block; font-size: 12px; margin-top: 10px; }
+    select, input[type="number"], input[type="range"], button {
+      width: 100%; margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px;
+    }
+    input[type="range"] { padding: 0; }
+    button { cursor: pointer; background: #111; color: #fff; border: 1px solid #111; }
+    button.secondary { background: #fff; color: #111; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .small { font-size: 12px; color: #444; margin-top: 8px; line-height: 1.35; }
+    .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .metric { background: #fafafa; border: 1px solid #eee; border-radius: 10px; padding: 8px; font-size: 12px; }
+    canvas { border: 1px solid #ddd; border-radius: 10px; background: #fff; touch-action: none; }
+    .hint { font-size: 12px; color: #333; margin-top: 8px; }
+    .toggleRow { display: flex; gap: 10px; margin-top: 10px; }
+    .toggleRow > label { margin: 0; display: flex; gap: 8px; align-items: center; font-size: 12px; }
+    .toggleRow input { width: auto; }
+  </style>
+</head>
+<body>
+  <h1>TensorFlow.js Regression Demo: OLS, Regularisation, Epsilon-Insensitive Loss</h1>
+
+  <div class="row">
+    <div class="panel controls">
+      <div class="small">
+        Click on the plot to add points. Shift click to delete the nearest point. Use the dataset menu to load synthetic data.
+      </div>
+
+      <label>Dataset</label>
+      <select id="dataset">
+        <option value="custom">Custom (click to add)</option>
+        <option value="linear">Linear with noise</option>
+        <option value="quadratic">Quadratic with noise</option>
+        <option value="sine">Sine with noise</option>
+        <option value="outliers">Linear with outliers</option>
+      </select>
+
+      <label>Basis</label>
+      <select id="basis">
+        <option value="linear">Linear (1, x)</option>
+        <option value="poly">Polynomial (1, x, x^2, ...)</option>
+      </select>
+
+      <label>Polynomial degree (only for polynomial basis)</label>
+      <input id="degree" type="number" min="1" max="7" value="3" />
+
+      <label>Loss</label>
+      <select id="loss">
+        <option value="mse">OLS (MSE)</option>
+        <option value="eps">Epsilon-insensitive</option>
+      </select>
+
+      <label>Epsilon (only for epsilon-insensitive loss)</label>
+      <input id="epsilon" type="range" min="0" max="0.5" step="0.01" value="0.10" />
+      <div class="small">epsilon = <span id="epsVal">0.10</span></div>
+
+      <label>Regularisation</label>
+      <select id="regType">
+        <option value="none">None</option>
+        <option value="l2">L2 (ridge)</option>
+        <option value="l1">L1 (lasso)</option>
+      </select>
+
+      <label>Lambda (regularisation strength)</label>
+      <input id="lambda" type="range" min="0" max="1" step="0.01" value="0.05" />
+      <div class="small">lambda = <span id="lamVal">0.05</span></div>
+
+      <label>Learning rate</label>
+      <input id="lr" type="range" min="0.001" max="0.2" step="0.001" value="0.05" />
+      <div class="small">lr = <span id="lrVal">0.050</span></div>
+
+      <label>Iterations</label>
+      <input id="iters" type="number" min="10" max="5000" value="800" />
+
+      <div class="toggleRow">
+        <label><input id="autoFit" type="checkbox" /> Auto-fit on changes</label>
+        <label><input id="showBand" type="checkbox" checked /> Show epsilon band</label>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:12px;">
+        <button id="fitBtn">Fit model</button>
+        <button id="resetBtn" class="secondary">Reset model</button>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:10px;">
+        <button id="clearPtsBtn" class="secondary">Clear points</button>
+        <button id="randBtn" class="secondary">Randomise seed</button>
+      </div>
+
+      <div class="kv">
+        <div class="metric">Points: <b id="nPts">0</b></div>
+        <div class="metric">Train loss: <b id="trainLoss">-</b></div>
+        <div class="metric">MSE: <b id="mseVal">-</b></div>
+        <div class="metric">MAE: <b id="maeVal">-</b></div>
+      </div>
+
+      <div class="small">
+        Notes:
+        <ul>
+          <li>OLS refers to minimising mean squared error. With L2 regularisation this is ridge regression.</li>
+          <li>Epsilon-insensitive loss ignores errors smaller than epsilon, which can reduce sensitivity to noise and outliers.</li>
+          <li>For non-linear fits, use a polynomial basis and increase the degree carefully to avoid overfitting.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="panel plot">
+      <canvas id="canvas" width="620" height="420"></canvas>
+      <div class="hint">
+        Plot coordinates are normalised: x and y live roughly in [-1, 1]. The demo internally rescales to keep training stable.
+      </div>
+    </div>
+  </div>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+
+  <script>
+    // ----------------------------
+    // Utilities: deterministic RNG
+    // ----------------------------
+    function mulberry32(seed) {
+      return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // ----------------------------
+    // Canvas coordinate transforms
+    // ----------------------------
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // World coords: x,y in [-1, 1]
+    function worldToCanvas(x, y) {
+      const px = (x + 1) * 0.5 * canvas.width;
+      const py = (1 - (y + 1) * 0.5) * canvas.height;
+      return { px, py };
+    }
+    function canvasToWorld(px, py) {
+      const x = (px / canvas.width) * 2 - 1;
+      const y = -((py / canvas.height) * 2 - 1);
+      return { x, y };
+    }
+
+    // ----------------------------
+    // Data + model state
+    // ----------------------------
+    let points = []; // {x, y}
+    let seed = 7;
+    let rng = mulberry32(seed);
+
+    // Model params: weights for basis features
+    let W = null; // tf.Variable shape [D, 1]
+    let initialisedD = null;
+
+    function currentDegree() {
+      const deg = parseInt(document.getElementById("degree").value, 10);
+      return Math.max(1, Math.min(7, isFinite(deg) ? deg : 3));
+    }
+
+    function featureDim() {
+      const basis = document.getElementById("basis").value;
+      if (basis === "linear") return 2; // [1, x]
+      return currentDegree() + 1; // [1, x, x^2, ...]
+    }
+
+    function basisFeatures(xTensor) {
+      // xTensor shape [N, 1]
+      const basis = document.getElementById("basis").value;
+      if (basis === "linear") {
+        const ones = tf.onesLike(xTensor);
+        return tf.concat([ones, xTensor], 1); // [N,2]
+      } else {
+        const deg = currentDegree();
+        const feats = [];
+        feats.push(tf.onesLike(xTensor));
+        let pow = xTensor;
+        feats.push(pow);
+        for (let k = 2; k <= deg; k++) {
+          pow = pow.mul(xTensor);
+          feats.push(pow);
+        }
+        return tf.concat(feats, 1); // [N, deg+1]
+      }
+    }
+
+    function ensureModelInitialised() {
+      const D = featureDim();
+      if (W && initialisedD === D) return;
+
+      if (W) W.dispose();
+      // Small random init
+      W = tf.variable(tf.randomNormal([D, 1], 0, 0.05, "float32", seed));
+      initialisedD = D;
+    }
+
+    function predictY(xTensor) {
+      // xTensor [N,1]
+      const X = basisFeatures(xTensor);  // [N,D]
+      return X.matMul(W); // [N,1]
+    }
+
+    function getControls() {
+      const lossType = document.getElementById("loss").value;
+      const eps = parseFloat(document.getElementById("epsilon").value);
+      const regType = document.getElementById("regType").value;
+      const lambda = parseFloat(document.getElementById("lambda").value);
+      const lr = parseFloat(document.getElementById("lr").value);
+      const iters = parseInt(document.getElementById("iters").value, 10);
+      return {
+        lossType,
+        eps: isFinite(eps) ? eps : 0.1,
+        regType,
+        lambda: isFinite(lambda) ? lambda : 0.0,
+        lr: isFinite(lr) ? lr : 0.05,
+        iters: isFinite(iters) ? Math.max(10, Math.min(5000, iters)) : 800
+      };
+    }
+
+    function lossFn(xTensor, yTensor, controls) {
+      // xTensor [N,1], yTensor [N,1]
+      const yHat = predictY(xTensor); // [N,1]
+      const resid = yHat.sub(yTensor).abs(); // |yhat - y|
+      let dataLoss;
+
+      if (controls.lossType === "mse") {
+        dataLoss = resid.square().mean(); // OLS objective
+      } else {
+        // epsilon-insensitive: max(0, |r| - eps), use squared penalty for smoothness
+        const epsT = tf.scalar(controls.eps);
+        const hinge = resid.sub(epsT).maximum(0);
+        dataLoss = hinge.square().mean();
+        epsT.dispose();
+      }
+
+      let regLoss = tf.scalar(0);
+      if (controls.regType === "l2") {
+        // Do not regularise bias term W[0] if you want. Here we regularise all for simplicity,
+        // but you can exclude W[0] by slicing.
+        regLoss.dispose();
+        regLoss = W.square().mean().mul(tf.scalar(controls.lambda));
+      } else if (controls.regType === "l1") {
+        regLoss.dispose();
+        regLoss = W.abs().mean().mul(tf.scalar(controls.lambda));
+      }
+
+      const total = dataLoss.add(regLoss);
+      // Dispose temporaries except total (returned)
+      yHat.dispose();
+      resid.dispose();
+      dataLoss.dispose();
+      regLoss.dispose();
+      return total;
+    }
+
+    // ----------------------------
+    // Training
+    // ----------------------------
+    async function fitModel() {
+      if (points.length < 2) return;
+
+      ensureModelInitialised();
+      const controls = getControls();
+      const optimiser = tf.train.adam(controls.lr);
+
+      const xs = tf.tensor2d(points.map(p => [p.x]), [points.length, 1], "float32");
+      const ys = tf.tensor2d(points.map(p => [p.y]), [points.length, 1], "float32");
+
+      // Training loop
+      let finalLoss = NaN;
+      for (let i = 0; i < controls.iters; i++) {
+        const l = optimiser.minimize(() => lossFn(xs, ys, controls), true, [W]);
+        finalLoss = (await l.data())[0];
+        l.dispose();
+
+        // Yield periodically for UI responsiveness
+        if (i % 50 === 0) await tf.nextFrame();
+      }
+
+      xs.dispose();
+      ys.dispose();
+
+      // Update metrics based on fitted model
+      await updateMetrics();
+      draw();
+      document.getElementById("trainLoss").textContent = finalLoss.toFixed(4);
+    }
+
+    async function updateMetrics() {
+      if (!W || points.length === 0) {
+        document.getElementById("mseVal").textContent = "-";
+        document.getElementById("maeVal").textContent = "-";
+        return;
+      }
+      const xs = tf.tensor2d(points.map(p => [p.x]), [points.length, 1], "float32");
+      const ys = tf.tensor2d(points.map(p => [p.y]), [points.length, 1], "float32");
+      const yHat = predictY(xs);
+      const resid = yHat.sub(ys).abs();
+      const mse = await resid.square().mean().data();
+      const mae = await resid.mean().data();
+      document.getElementById("mseVal").textContent = mse[0].toFixed(4);
+      document.getElementById("maeVal").textContent = mae[0].toFixed(4);
+      xs.dispose(); ys.dispose(); yHat.dispose(); resid.dispose();
+    }
+
+    function resetModel() {
+      if (W) { W.dispose(); W = null; }
+      initialisedD = null;
+      document.getElementById("trainLoss").textContent = "-";
+      updateMetrics();
+      draw();
+    }
+
+    // ----------------------------
+    // Datasets
+    // ----------------------------
+    function makeDataset(kind, n = 40) {
+      const pts = [];
+      const noise = 0.10;
+
+      for (let i = 0; i < n; i++) {
+        const x = -1 + 2 * (i / (n - 1));
+        let y;
+        if (kind === "linear") {
+          y = 0.6 * x + 0.1 + (rng() - 0.5) * 2 * noise;
+        } else if (kind === "quadratic") {
+          y = 0.8 * x * x - 0.2 + (rng() - 0.5) * 2 * noise;
+        } else if (kind === "sine") {
+          y = 0.7 * Math.sin(3.0 * x) + (rng() - 0.5) * 2 * noise;
+        } else if (kind === "outliers") {
+          y = 0.55 * x - 0.05 + (rng() - 0.5) * 2 * noise;
+          if (rng() < 0.12) y += (rng() < 0.5 ? 1 : -1) * (0.7 + 0.2 * rng());
+        } else {
+          y = (rng() - 0.5) * 0.2;
+        }
+        // Clamp lightly to keep plot neat
+        y = Math.max(-1.2, Math.min(1.2, y));
+        pts.push({ x, y });
+      }
+      return pts;
+    }
+
+    function loadDataset(kind) {
+      if (kind === "custom") return;
+      points = makeDataset(kind);
+      document.getElementById("nPts").textContent = String(points.length);
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    }
+
+    // ----------------------------
+    // Rendering
+    // ----------------------------
+    function drawAxes() {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Grid
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#eee";
+      for (let k = 0; k <= 10; k++) {
+        const t = k / 10;
+        ctx.beginPath();
+        ctx.moveTo(t * canvas.width, 0);
+        ctx.lineTo(t * canvas.width, canvas.height);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, t * canvas.height);
+        ctx.lineTo(canvas.width, t * canvas.height);
+        ctx.stroke();
+      }
+
+      // Axes at x=0 and y=0
+      ctx.strokeStyle = "#ddd";
+      const x0 = worldToCanvas(0, 0).px;
+      const y0 = worldToCanvas(0, 0).py;
+      ctx.beginPath();
+      ctx.moveTo(x0, 0);
+      ctx.lineTo(x0, canvas.height);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, y0);
+      ctx.lineTo(canvas.width, y0);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawPoints() {
+      ctx.save();
+      for (const p of points) {
+        const { px, py } = worldToCanvas(p.x, p.y);
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#111";
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    async function drawCurve() {
+      if (!W) return;
+
+      // Sample curve
+      const xs = [];
+      const N = 300;
+      for (let i = 0; i < N; i++) {
+        xs.push(-1 + 2 * i / (N - 1));
+      }
+
+      const xT = tf.tensor2d(xs.map(v => [v]), [N, 1], "float32");
+      const yHat = predictY(xT);
+      const yArr = await yHat.data();
+
+      const controls = getControls();
+      const showBand = document.getElementById("showBand").checked;
+      const showEpsBand = (controls.lossType === "eps") && showBand;
+
+      // Draw epsilon band around curve
+      if (showEpsBand) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.06)";
+        ctx.beginPath();
+
+        // Upper
+        for (let i = 0; i < N; i++) {
+          const x = xs[i];
+          const y = yArr[i] + controls.eps;
+          const { px, py } = worldToCanvas(x, y);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        // Lower (reverse)
+        for (let i = N - 1; i >= 0; i--) {
+          const x = xs[i];
+          const y = yArr[i] - controls.eps;
+          const { px, py } = worldToCanvas(x, y);
+          ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw curve
+      ctx.save();
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < N; i++) {
+        const x = xs[i];
+        const y = yArr[i];
+        const { px, py } = worldToCanvas(x, y);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      xT.dispose();
+      yHat.dispose();
+    }
+
+    function draw() {
+      drawAxes();
+      drawPoints();
+      // Draw curve asynchronously to allow tf ops
+      drawCurve();
+    }
+
+    // ----------------------------
+    // Interaction: add/remove points
+    // ----------------------------
+    function findNearestPoint(x, y) {
+      let bestIdx = -1;
+      let bestD2 = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const dx = points[i].x - x;
+        const dy = points[i].y - y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+      }
+      return { bestIdx, bestD2 };
+    }
+
+    canvas.addEventListener("pointerdown", async (ev) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = ev.clientX - rect.left;
+      const py = ev.clientY - rect.top;
+      const { x, y } = canvasToWorld(px, py);
+
+      if (ev.shiftKey) {
+        const { bestIdx, bestD2 } = findNearestPoint(x, y);
+        if (bestIdx >= 0 && bestD2 < 0.02) {
+          points.splice(bestIdx, 1);
+        }
+      } else {
+        points.push({ x, y });
+      }
+
+      document.getElementById("nPts").textContent = String(points.length);
+      resetModel();
+      draw();
+      if (document.getElementById("autoFit").checked) await fitModel();
+    });
+
+    // ----------------------------
+    // Wire up UI
+    // ----------------------------
+    function syncLabels() {
+      document.getElementById("epsVal").textContent =
+        Number(document.getElementById("epsilon").value).toFixed(2);
+      document.getElementById("lamVal").textContent =
+        Number(document.getElementById("lambda").value).toFixed(2);
+      document.getElementById("lrVal").textContent =
+        Number(document.getElementById("lr").value).toFixed(3);
+    }
+
+    document.getElementById("dataset").addEventListener("change", (e) => loadDataset(e.target.value));
+    document.getElementById("basis").addEventListener("change", () => {
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    });
+    document.getElementById("degree").addEventListener("change", () => {
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    });
+    document.getElementById("loss").addEventListener("change", () => {
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    });
+    document.getElementById("epsilon").addEventListener("input", () => {
+      syncLabels();
+      draw();
+      if (document.getElementById("autoFit").checked) fitModel();
+    });
+    document.getElementById("regType").addEventListener("change", () => {
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    });
+    document.getElementById("lambda").addEventListener("input", () => {
+      syncLabels();
+      resetModel();
+      if (document.getElementById("autoFit").checked) fitModel();
+      else draw();
+    });
+    document.getElementById("lr").addEventListener("input", () => syncLabels());
+    document.getElementById("iters").addEventListener("change", () => {
+      if (document.getElementById("autoFit").checked) fitModel();
+    });
+    document.getElementById("showBand").addEventListener("change", () => draw());
+
+    document.getElementById("fitBtn").addEventListener("click", async () => {
+      document.getElementById("fitBtn").disabled = true;
+      try { await fitModel(); }
+      finally { document.getElementById("fitBtn").disabled = false; }
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", () => resetModel());
+
+    document.getElementById("clearPtsBtn").addEventListener("click", () => {
+      points = [];
+      document.getElementById("nPts").textContent = "0";
+      resetModel();
+      draw();
+    });
+
+    document.getElementById("randBtn").addEventListener("click", () => {
+      seed = Math.floor(Math.random() * 1e9);
+      rng = mulberry32(seed);
+      const ds = document.getElementById("dataset").value;
+      if (ds !== "custom") loadDataset(ds);
+    });
+
+    document.getElementById("autoFit").addEventListener("change", () => {
+      if (document.getElementById("autoFit").checked) fitModel();
+    });
+
+    // Initial render
+    syncLabels();
+    draw();
+  </script>
+</body>
+</html>
