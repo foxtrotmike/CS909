@@ -47,6 +47,7 @@ This file lists each top-level file in the repository with a short description o
 - `barebones_tsvm_cleaned.ipynb`: Another cleaned variant of TSVM examples.
 - `brevitas.ipynb`: Notebook possibly demonstrating brevitas or quantized networks.
 - `clustering_pytorch.ipynb`: Notebook with clustering examples implemented in PyTorch.
+- `ci.html`: Demonstrates the concept of confidence intervals
 - `cnn_mnist_pytorch.ipynb`: CNN tutorial for MNIST implemented in PyTorch.
 - `denoising_local_pca.ipynb`: Notebook demonstrating denoising with local PCA.
 - `distance_dot.html`: HTML explaining distance measures and dot products.
