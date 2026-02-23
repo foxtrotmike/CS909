@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bootstrap confidence intervals: first principles (MSc cohort heights)</title>
+
+  <!-- MathJax for clear mathematics -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+  <style>
+    :root { --bg:#fff; --fg:#111; --muted:#5b6470; --card:#f6f7f9; --border:#d9dde3; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--fg); background:var(--bg); }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 18px; }
+    h1 { font-size: 22px; margin: 0 0 10px; }
+    h2 { font-size: 18px; margin: 14px 0 8px; }
+    h3 { font-size: 15px; margin: 12px 0 6px; }
+    p, li { line-height: 1.45; }
+    .grid { display:grid; grid-template-columns: 1.25fr 0.75fr; gap: 14px; align-items:start; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    canvas { width: 100%; height: auto; background:#fff; border: 1px solid var(--border); border-radius: 10px; }
+    .controls { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row { display:grid; grid-template-columns: 1fr auto; gap: 10px; align-items:center; }
+    label { font-size: 13px; color: var(--muted); }
+    input[type="range"] { width: 100%; }
+    .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top: 8px; }
+    button { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background:#fff; cursor:pointer; font-weight: 650; }
+    button:active { transform: translateY(1px); }
+    .stats { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .stat { background:#fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+    .stat .k { font-size: 12px; color: var(--muted); }
+    .stat .v { font-size: 18px; font-weight: 800; margin-top: 3px; }
+    .note { font-size: 13px; color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .legend { display:flex; gap:12px; align-items:center; font-size: 13px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+    .swatch { width: 14px; height: 10px; border-radius: 3px; display:inline-block; border:1px solid var(--border); }
+    .callout { background:#fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+    .hr { height:1px; background: var(--border); margin: 12px 0; }
+    .two { display:grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 980px){ .two { grid-template-columns: 1fr 1fr; } }
+
+    /* Tabs */
+    .tabs { display:flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .tab { padding: 7px 10px; border-radius: 10px; border: 1px solid var(--border); background:#fff; cursor:pointer; font-weight: 650; font-size: 13px; }
+    .tab[aria-selected="true"] { background:#eef1f5; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+
+    /* Inline highlights */
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; border:1px solid var(--border); background:#fff; font-size: 12px; color: var(--muted); }
+    .kv { display:grid; grid-template-columns: 1fr auto; gap: 10px; align-items:center; }
+    .kv .k { font-size: 12px; color: var(--muted); }
+    .kv .v { font-size: 12px; font-weight: 700; }
+    .kvs { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .hint { font-size: 12.5px; color: var(--muted); }
+    .checkrow { display:flex; gap:8px; align-items:center; margin-top: 8px; }
+    .checkrow input { transform: translateY(1px); }
+
+    /* Small highlight for the credible toggle */
+    #credPanel h3 { margin: 0 0 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Bootstrap confidence intervals: first principles using MSc cohort heights</h1>
+
+    <p>
+      Scenario: each academic year, the Computer Science MSc admits a new cohort.
+      Assume the admissions process is stable, so the true mean height \(\mu\) of this MSc-student population is fixed but unknown.
+      In a given year you observe one cohort (size \(n\)) and compute an interval estimate for \(\mu\).
+      The meaning of “95% confidence” is about what happens if you repeated this year-by-year cohort sampling process many times.
+    </p>
+
+    <div class="grid">
+      <!-- LEFT: Visuals -->
+      <div class="card">
+        <h2>Repeated cohort-years (stacked bootstrap intervals)</h2>
+        <canvas id="stackCanvas" width="980" height="520"></canvas>
+        <div class="legend">
+          <span><span class="swatch" style="background:#e9f7ef"></span> interval contains the true mean \(\mu\) (hit)</span>
+          <span><span class="swatch" style="background:#fdeaea"></span> interval misses \(\mu\) (miss)</span>
+          <span><span class="swatch" style="background:#fff"></span> vertical line is the true \(\mu\)</span>
+        </div>
+
+        <div class="two" style="margin-top: 10px;">
+          <div>
+            <h3>Bootstrap distribution for the latest cohort-year</h3>
+            <canvas id="histCanvas" width="980" height="300"></canvas>
+            <p class="note">
+              Histogram of bootstrap means \(\bar{X}^*\) from resampling the latest cohort-year.
+              The CI endpoints are empirical quantiles of this distribution.
+            </p>
+          </div>
+          <div>
+            <h3>Latest cohort-year snapshot (observed heights)</h3>
+            <canvas id="sampleCanvas" width="980" height="300"></canvas>
+            <p class="note">
+              Dots are the observed heights \(x_1,\dots,x_n\). Bootstrap resamples these values with replacement to create fake cohorts.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Controls + Explanation -->
+      <div class="card">
+        <h2>Controls</h2>
+
+        <div class="controls">
+          <div class="row">
+            <label for="nSlider">Cohort size \(n\)</label>
+            <div class="mono" id="nVal">30</div>
+          </div>
+          <input id="nSlider" type="range" min="5" max="200" step="1" value="30" />
+
+          <div class="row">
+            <label for="confSlider">Confidence level \(1-\alpha\)</label>
+            <div class="mono" id="confVal">0.95</div>
+          </div>
+          <input id="confSlider" type="range" min="0.50" max="0.99" step="0.01" value="0.95" />
+
+          <div class="row">
+            <label for="sigmaSlider">Height spread \(\sigma\) (metres)</label>
+            <div class="mono" id="sigmaVal">0.12</div>
+          </div>
+          <input id="sigmaSlider" type="range" min="0.05" max="0.30" step="0.005" value="0.12" />
+
+          <div class="row">
+            <label for="muSlider">True mean height \(\mu\) (metres)</label>
+            <div class="mono" id="muVal">1.70</div>
+          </div>
+          <input id="muSlider" type="range" min="1.40" max="2.00" step="0.005" value="1.70" />
+
+          <div class="row">
+            <label for="bSlider">Bootstrap resamples \(B\)</label>
+            <div class="mono" id="bVal">2000</div>
+          </div>
+          <input id="bSlider" type="range" min="200" max="8000" step="200" value="2000" />
+
+          <div class="row">
+            <label for="batchSlider">Batch size (per click)</label>
+            <div class="mono" id="batchVal">20</div>
+          </div>
+          <input id="batchSlider" type="range" min="1" max="200" step="1" value="20" />
+
+          <div class="row">
+            <label for="speedSlider">Auto-run speed</label>
+            <div class="mono" id="speedVal">1.0x</div>
+          </div>
+          <input id="speedSlider" type="range" min="0.25" max="3.0" step="0.25" value="1.0" />
+        </div>
+
+        <div class="btns">
+          <button id="oneBtn">Sample 1 cohort-year</button>
+          <button id="manyBtn">Sample batch</button>
+          <button id="autoBtn">Auto-run</button>
+          <button id="stopBtn" disabled>Stop</button>
+          <button id="resetBtn">Reset</button>
+          <button id="credBtn">Contrast with credible intervals</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <div class="k">Cohort-years sampled (outer loop)</div>
+            <div class="v" id="drawnVal">0</div>
+          </div>
+          <div class="stat">
+            <div class="k">Estimated coverage</div>
+            <div class="v" id="covVal">0.0%</div>
+          </div>
+          <div class="stat">
+            <div class="k">Hits</div>
+            <div class="v" id="hitVal">0</div>
+          </div>
+          <div class="stat">
+            <div class="k">Misses</div>
+            <div class="v" id="missVal">0</div>
+          </div>
+        </div>
+
+        <div class="checkrow">
+          <input id="showDetails" type="checkbox" checked />
+          <label for="showDetails" class="note" style="margin:0;">Show live CI details for the latest cohort-year</label>
+        </div>
+
+        <div id="liveDetails" class="callout" style="margin-top: 8px;">
+          <div class="kvs">
+            <div class="kv"><div class="k">Latest cohort-year mean \(\bar{x}\)</div><div class="v mono" id="xbarLive">–</div></div>
+            <div class="kv"><div class="k">Bootstrap CI \([L,U]\)</div><div class="v mono" id="ciLive">–</div></div>
+            <div class="kv"><div class="k">\(\alpha\)</div><div class="v mono" id="alphaLive">–</div></div>
+            <div class="kv"><div class="k">Quantile levels \((\alpha/2,\ 1-\alpha/2)\)</div><div class="v mono" id="qLive">–</div></div>
+          </div>
+          <p class="hint" style="margin: 8px 0 0;">
+            Within a year (bootstrap): \(B\) resamples give a histogram and one interval.
+            Across years (coverage): many cohort-years estimate how often the procedure covers \(\mu\).
+          </p>
+        </div>
+
+        <div id="credPanel" class="callout" style="display:none; margin-top: 10px;">
+          <h3>Confidence intervals vs credible intervals</h3>
+
+          <p>
+            <b>Confidence interval (frequentist)</b>: \(\mu\) is fixed (unknown). The interval is random because it is computed from random data.
+            Over many repeated cohort-years, a 95% CI procedure contains \(\mu\) in about 95% of years.
+          </p>
+
+          <p>
+            <b>Credible interval (Bayesian)</b>: after observing this cohort-year, the data are fixed and we describe uncertainty about \(\mu\)
+            using a posterior distribution \(p(\mu \mid x)\). A 95% credible interval is an interval \([a,b]\) such that
+          </p>
+
+          \[
+            \Pr(\mu \in [a,b] \mid x) = 0.95
+          \]
+
+          <div class="hr"></div>
+
+          <p style="margin-bottom:6px;"><b>A concrete, comparable example (known \(\sigma\))</b></p>
+
+          <p class="note" style="margin-top:0;">
+            Suppose heights are modelled as \(X_i \sim \mathcal{N}(\mu,\sigma^2)\) with known \(\sigma\),
+            and we place a prior \(\mu \sim \mathcal{N}(\mu_0,\tau_0^2)\).
+            Then the posterior is also Gaussian:
+          </p>
+
+          \[
+            \tau_n^2 = \left(\frac{1}{\tau_0^2} + \frac{n}{\sigma^2}\right)^{-1},
+            \qquad
+            \mu_n = \tau_n^2\left(\frac{\mu_0}{\tau_0^2} + \frac{n\bar{x}}{\sigma^2}\right)
+          \]
+
+          <p class="note">
+            A symmetric 95% credible interval is approximately \(\mu_n \pm 1.96\,\tau_n\).
+            Unlike a CI, its interpretation is directly about \(\mu\) given the observed cohort-year.
+          </p>
+
+          <p class="note" style="margin-bottom:0;">
+            Important: a 95% credible interval is not guaranteed to have 95% frequentist coverage unless the model and prior match reality.
+          </p>
+        </div>
+
+        <div class="hr"></div>
+
+        <h2>Explanation (from first principles)</h2>
+        <div class="tabs" role="tablist" aria-label="Confidence interval explanation tabs">
+          <button class="tab" id="tab1" role="tab" aria-controls="panel1" aria-selected="true">1) What a CI is</button>
+          <button class="tab" id="tab2" role="tab" aria-controls="panel2" aria-selected="false">2) Bootstrap idea</button>
+          <button class="tab" id="tab3" role="tab" aria-controls="panel3" aria-selected="false">3) Quantiles to CI</button>
+          <button class="tab" id="tab4" role="tab" aria-controls="panel4" aria-selected="false">4) What the simulation measures</button>
+        </div>
+
+        <div id="panel1" class="panel active" role="tabpanel" aria-labelledby="tab1">
+          <p>
+            A confidence interval is not “a probability distribution over \(\mu\)”.
+            It is a <b>procedure</b> that takes data and outputs an interval.
+          </p>
+
+          <p class="callout">
+            Let \(X_1,\dots,X_n\) be heights from one cohort-year (a random sample).
+            A confidence interval procedure is a function
+            \(I(X_1,\dots,X_n)=[L(X),U(X)]\) such that
+          </p>
+
+          \[
+            \Pr\!\big(\mu \in I(X_1,\dots,X_n)\big) = 1-\alpha
+          \]
+
+          <p class="note">
+            The probability is over repeated sampling of new cohort-years from the same admissions pipeline.
+            The parameter \(\mu\) is fixed. The interval is random because it depends on random data.
+          </p>
+        </div>
+
+        <div id="panel2" class="panel" role="tabpanel" aria-labelledby="tab2">
+          <p>
+            To build a CI for \(\mu\), we need to understand how the estimator \(\bar{X}\) varies across repeated cohort-years.
+            That variation is described by the sampling distribution of \(\bar{X}\).
+          </p>
+
+          <p class="callout">
+            Bootstrap replaces “observe many new cohort-years from the whole programme” with:
+            “resample many fake cohorts from the one cohort-year we observed”.
+          </p>
+
+          <h3>Observed cohort-year</h3>
+          \[
+            \bar{x}=\frac{1}{n}\sum_{i=1}^{n}x_i
+          \]
+
+          <h3>Bootstrap resamples (with replacement)</h3>
+          \[
+            X_1^*,\dots,X_n^* \ \text{is drawn from } \{x_1,\dots,x_n\} \text{ with replacement}
+          \]
+          \[
+            \bar{x}^*=\frac{1}{n}\sum_{i=1}^{n}X_i^*
+          \]
+
+          <p class="note">
+            Repeating this \(B\) times gives \(\bar{x}^{*(1)},\dots,\bar{x}^{*(B)}\), which forms the histogram on the left.
+          </p>
+        </div>
+
+        <div id="panel3" class="panel" role="tabpanel" aria-labelledby="tab3">
+          <p>
+            Now connect back to the first-principles CI definition.
+            A 95% CI aims to capture the true \(\mu\) in 95% of repeated cohort-years.
+          </p>
+
+          <p class="callout">
+            The percentile bootstrap CI takes the central \(1-\alpha\) mass of the bootstrap sampling distribution of \(\bar{X}\)
+            using empirical quantiles.
+          </p>
+
+          \[
+            \text{CI}^{\text{boot}}_{1-\alpha}
+            =
+            \Big[q_{\alpha/2}(\bar{x}^*),\ q_{1-\alpha/2}(\bar{x}^*)\Big]
+          \]
+
+          <p class="note">
+            Quantiles here do not come from a Gaussian table.
+            They come from sorting the \(B\) bootstrap means and selecting the appropriate ranks.
+          </p>
+
+          \[
+            q_p(\bar{x}^*) \approx \text{the } p\text{-quantile of } \{\bar{x}^{*(1)},\dots,\bar{x}^{*(B)}\}
+          \]
+
+          <p class="note">
+            Intuition: we choose endpoints that cut off \(\alpha/2\) in each tail of the bootstrap distribution,
+            leaving a central fraction \(1-\alpha\) in between.
+          </p>
+        </div>
+
+        <div id="panel4" class="panel" role="tabpanel" aria-labelledby="tab4">
+          <p>
+            This demo has two loops. Keeping them separate makes everything click.
+          </p>
+
+          <div class="callout">
+            <p style="margin:0;">
+              <span class="pill">Within a year (bootstrap)</span>
+              For one fixed cohort-year, resample \(B\) times to get the histogram and compute one interval.
+            </p>
+            <p style="margin:10px 0 0;">
+              <span class="pill">Across years (coverage)</span>
+              Sample many cohort-years from a population with true mean \(\mu\).
+              For each cohort-year, build a bootstrap CI, then check if it contains \(\mu\).
+              The hit-rate estimates coverage.
+            </p>
+          </div>
+
+          \[
+            \text{Estimated coverage} \approx
+            \frac{\#\{\text{intervals that contain }\mu\}}{\#\{\text{intervals drawn}\}}
+          \]
+
+          <p class="note">
+            If the method is well calibrated under these conditions, the estimated coverage approaches the chosen confidence level as the number
+            of cohort-years increases.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+
+    // Random normal via Box-Muller (used only to generate a "true population" in the simulation)
+    function randn(){
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    function mean(arr){
+      let s = 0;
+      for (const x of arr) s += x;
+      return s / arr.length;
+    }
+
+    function quantileSorted(sorted, p){
+      const n = sorted.length;
+      if (n === 0) return NaN;
+      const t = clamp(p, 0, 1) * (n - 1);
+      const i = Math.floor(t);
+      const f = t - i;
+      if (i >= n - 1) return sorted[n - 1];
+      return (1 - f) * sorted[i] + f * sorted[i + 1];
+    }
+
+    function percentileCI(values, alpha){
+      const sorted = values.slice().sort((a,b)=>a-b);
+      const lo = quantileSorted(sorted, alpha / 2);
+      const hi = quantileSorted(sorted, 1 - alpha / 2);
+      return { lo, hi, sorted };
+    }
+
+    function bootstrapMeans(x, B){
+      const n = x.length;
+      const out = new Array(B);
+      for (let b = 0; b < B; b++){
+        let s = 0;
+        for (let i = 0; i < n; i++){
+          const j = Math.floor(Math.random() * n); // with replacement
+          s += x[j];
+        }
+        out[b] = s / n;
+      }
+      return out;
+    }
+
+    function typesetMath(){
+      if (window.MathJax && window.MathJax.typesetPromise){
+        window.MathJax.typesetPromise();
+      }
+    }
+
+    // -----------------------------
+    // Elements
+    // -----------------------------
+    const stackCanvas = document.getElementById('stackCanvas');
+    const histCanvas = document.getElementById('histCanvas');
+    const sampleCanvas = document.getElementById('sampleCanvas');
+    const sctx = stackCanvas.getContext('2d');
+    const hctx = histCanvas.getContext('2d');
+    const pctx = sampleCanvas.getContext('2d');
+
+    const nSlider = document.getElementById('nSlider');
+    const confSlider = document.getElementById('confSlider');
+    const sigmaSlider = document.getElementById('sigmaSlider');
+    const muSlider = document.getElementById('muSlider');
+    const bSlider = document.getElementById('bSlider');
+    const batchSlider = document.getElementById('batchSlider');
+    const speedSlider = document.getElementById('speedSlider');
+
+    const nVal = document.getElementById('nVal');
+    const confVal = document.getElementById('confVal');
+    const sigmaVal = document.getElementById('sigmaVal');
+    const muVal = document.getElementById('muVal');
+    const bVal = document.getElementById('bVal');
+    const batchVal = document.getElementById('batchVal');
+    const speedVal = document.getElementById('speedVal');
+
+    const drawnVal = document.getElementById('drawnVal');
+    const covVal = document.getElementById('covVal');
+    const hitVal = document.getElementById('hitVal');
+    const missVal = document.getElementById('missVal');
+
+    const oneBtn = document.getElementById('oneBtn');
+    const manyBtn = document.getElementById('manyBtn');
+    const autoBtn = document.getElementById('autoBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const showDetails = document.getElementById('showDetails');
+    const liveDetails = document.getElementById('liveDetails');
+    const xbarLive = document.getElementById('xbarLive');
+    const ciLive = document.getElementById('ciLive');
+    const alphaLive = document.getElementById('alphaLive');
+    const qLive = document.getElementById('qLive');
+
+    // Credible interval contrast
+    const credBtn = document.getElementById('credBtn');
+    const credPanel = document.getElementById('credPanel');
+
+    // Tabs
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const panels = Array.from(document.querySelectorAll('.panel'));
+    function activateTab(idx){
+      tabs.forEach((t,i)=> t.setAttribute('aria-selected', i===idx ? 'true' : 'false'));
+      panels.forEach((p,i)=> p.classList.toggle('active', i===idx));
+      typesetMath();
+    }
+    tabs.forEach((t,i)=> t.addEventListener('click', ()=>activateTab(i)));
+
+    // -----------------------------
+    // State
+    // -----------------------------
+    let intervals = []; // {lo, hi, hit}
+    let hits = 0;
+    let misses = 0;
+
+    let running = false;
+    let rafId = null;
+    let acc = 0;
+
+    let lastSample = null;
+    let lastBootMeans = null;
+    let lastCI = null;
+    let lastXbar = null;
+
+    // -----------------------------
+    // Drawing
+    // -----------------------------
+    function xRange(mu, sigma){
+      const half = 5 * sigma + 0.06;
+      return [mu - half, mu + half];
+    }
+
+    function clear(ctx, w, h){
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0,0,w,h);
+    }
+
+    function drawStack(){
+      const mu = +muSlider.value;
+      const sigma = +sigmaSlider.value;
+      const [xmin, xmax] = xRange(mu, sigma);
+
+      const W = stackCanvas.width;
+      const H = stackCanvas.height;
+      clear(sctx, W, H);
+
+      sctx.strokeStyle = "#d9dde3";
+      sctx.lineWidth = 1;
+      sctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+      const xMu = (mu - xmin) / (xmax - xmin) * W;
+      sctx.strokeStyle = "#111";
+      sctx.lineWidth = 2;
+      sctx.beginPath();
+      sctx.moveTo(xMu, 0);
+      sctx.lineTo(xMu, H);
+      sctx.stroke();
+
+      sctx.fillStyle = "#111";
+      sctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      sctx.fillText("Each row is one cohort-year; interval computed by bootstrap quantiles", 12, 22);
+      sctx.fillStyle = "#666";
+      sctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      sctx.fillText("Vertical line is true μ (fixed). Intervals move because data change across years.", 12, 40);
+
+      sctx.fillStyle = "#666";
+      sctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      const ticks = 6;
+      for (let i = 0; i <= ticks; i++){
+        const t = i / ticks;
+        const x = t * W;
+        const val = xmin + t * (xmax - xmin);
+
+        sctx.strokeStyle = "#eef1f5";
+        sctx.lineWidth = 1;
+        sctx.beginPath();
+        sctx.moveTo(x, 0);
+        sctx.lineTo(x, H);
+        sctx.stroke();
+
+        sctx.fillText(val.toFixed(3), x + 4, H - 6);
+      }
+
+      const topMargin = 56;
+      const bottomMargin = 26;
+      const usableH = H - topMargin - bottomMargin;
+
+      const maxShown = Math.floor(usableH / 6);
+      const start = Math.max(0, intervals.length - maxShown);
+      const shown = intervals.slice(start);
+      const rowH = usableH / Math.max(1, shown.length);
+
+      for (let i = 0; i < shown.length; i++){
+        const it = shown[i];
+        const y = topMargin + (i + 0.5) * rowH;
+
+        const x1 = (it.lo - xmin) / (xmax - xmin) * W;
+        const x2 = (it.hi - xmin) / (xmax - xmin) * W;
+
+        sctx.fillStyle = it.hit ? "#e9f7ef" : "#fdeaea";
+        sctx.fillRect(0, y - rowH/2, W, rowH);
+
+        sctx.strokeStyle = "#111";
+        sctx.lineWidth = 2;
+        sctx.beginPath();
+        sctx.moveTo(x1, y);
+        sctx.lineTo(x2, y);
+        sctx.stroke();
+
+        sctx.beginPath();
+        sctx.moveTo(x1, y - rowH*0.25);
+        sctx.lineTo(x1, y + rowH*0.25);
+        sctx.moveTo(x2, y - rowH*0.25);
+        sctx.lineTo(x2, y + rowH*0.25);
+        sctx.stroke();
+      }
+    }
+
+    function drawHistogram(){
+      const W = histCanvas.width;
+      const H = histCanvas.height;
+      clear(hctx, W, H);
+
+      hctx.strokeStyle = "#d9dde3";
+      hctx.lineWidth = 1;
+      hctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+      hctx.fillStyle = "#111";
+      hctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      hctx.fillText("Bootstrap means for the latest cohort-year (within a year)", 12, 22);
+
+      if (!lastBootMeans || lastBootMeans.length === 0){
+        hctx.fillStyle = "#666";
+        hctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+        hctx.fillText("Sample a cohort-year to see the bootstrap distribution.", 12, 44);
+        return;
+      }
+
+      const means = lastBootMeans;
+      let minv = Infinity, maxv = -Infinity;
+      for (const m of means){ if (m < minv) minv = m; if (m > maxv) maxv = m; }
+      const pad = 0.02;
+      minv -= pad; maxv += pad;
+
+      const bins = 30;
+      const counts = new Array(bins).fill(0);
+      for (const m of means){
+        let t = (m - minv) / (maxv - minv);
+        t = clamp(t, 0, 1);
+        let b = Math.floor(t * bins);
+        if (b === bins) b = bins - 1;
+        counts[b] += 1;
+      }
+      const maxc = Math.max(...counts);
+
+      const left = 44, right = 16, top = 36, bottom = 26;
+      const plotW = W - left - right;
+      const plotH = H - top - bottom;
+
+      hctx.strokeStyle = "#d9dde3";
+      hctx.lineWidth = 1;
+      hctx.beginPath();
+      hctx.moveTo(left, top);
+      hctx.lineTo(left, top + plotH);
+      hctx.lineTo(left + plotW, top + plotH);
+      hctx.stroke();
+
+      const barW = plotW / bins;
+      for (let i = 0; i < bins; i++){
+        const bh = (counts[i] / maxc) * plotH;
+        const x = left + i * barW;
+        const y = top + plotH - bh;
+        hctx.fillStyle = "#eef1f5";
+        hctx.fillRect(x + 1, y, Math.max(0, barW - 2), bh);
+      }
+
+      const lo = lastCI.lo, hi = lastCI.hi, xbar = lastXbar;
+      function xMap(v){ return left + (v - minv) / (maxv - minv) * plotW; }
+      const xLo = xMap(lo), xHi = xMap(hi), xXb = xMap(xbar);
+
+      hctx.lineWidth = 2;
+
+      hctx.strokeStyle = "#111";
+      hctx.beginPath();
+      hctx.moveTo(xXb, top);
+      hctx.lineTo(xXb, top + plotH);
+      hctx.stroke();
+
+      hctx.strokeStyle = "#2b2b2b";
+      hctx.beginPath();
+      hctx.moveTo(xLo, top);
+      hctx.lineTo(xLo, top + plotH);
+      hctx.moveTo(xHi, top);
+      hctx.lineTo(xHi, top + plotH);
+      hctx.stroke();
+
+      hctx.fillStyle = "#666";
+      hctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      hctx.fillText("L=" + lo.toFixed(3), xLo + 4, top + 12);
+      hctx.fillText("U=" + hi.toFixed(3), xHi + 4, top + 12);
+      hctx.fillText("x̄=" + xbar.toFixed(3), xXb + 4, top + 28);
+
+      const t0 = minv, t1 = (minv + maxv) / 2, t2 = maxv;
+      hctx.fillText(t0.toFixed(3), left, top + plotH + 18);
+      hctx.fillText(t1.toFixed(3), left + plotW * 0.5 - 18, top + plotH + 18);
+      hctx.fillText(t2.toFixed(3), left + plotW - 48, top + plotH + 18);
+    }
+
+    function drawSampleDots(){
+      const W = sampleCanvas.width;
+      const H = sampleCanvas.height;
+      clear(pctx, W, H);
+
+      pctx.strokeStyle = "#d9dde3";
+      pctx.lineWidth = 1;
+      pctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+      pctx.fillStyle = "#111";
+      pctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      pctx.fillText("Observed heights in the latest cohort-year", 12, 22);
+
+      if (!lastSample || lastSample.length === 0){
+        pctx.fillStyle = "#666";
+        pctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+        pctx.fillText("Sample a cohort-year to see the observed heights.", 12, 44);
+        return;
+      }
+
+      const xs = lastSample;
+      let minv = Math.min(...xs), maxv = Math.max(...xs);
+      minv -= 0.02; maxv += 0.02;
+
+      const left = 44, right = 16, top = 36, bottom = 26;
+      const plotW = W - left - right;
+      const plotH = H - top - bottom;
+
+      pctx.strokeStyle = "#d9dde3";
+      pctx.lineWidth = 1;
+      pctx.beginPath();
+      pctx.moveTo(left, top);
+      pctx.lineTo(left, top + plotH);
+      pctx.lineTo(left + plotW, top + plotH);
+      pctx.stroke();
+
+      pctx.fillStyle = "#111";
+      for (let i = 0; i < xs.length; i++){
+        const x = left + (xs[i] - minv) / (maxv - minv) * plotW;
+        const y = top + plotH * (0.15 + 0.7 * Math.random());
+        pctx.beginPath();
+        pctx.arc(x, y, 2.2, 0, 2*Math.PI);
+        pctx.fill();
+      }
+
+      const xbar = lastXbar;
+      const xXb = left + (xbar - minv) / (maxv - minv) * plotW;
+      pctx.strokeStyle = "#111";
+      pctx.lineWidth = 2;
+      pctx.beginPath();
+      pctx.moveTo(xXb, top);
+      pctx.lineTo(xXb, top + plotH);
+      pctx.stroke();
+
+      pctx.fillStyle = "#666";
+      pctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      pctx.fillText("x̄=" + xbar.toFixed(3), xXb + 4, top + 12);
+
+      const t0 = minv, t1 = (minv + maxv) / 2, t2 = maxv;
+      pctx.fillText(t0.toFixed(3), left, top + plotH + 18);
+      pctx.fillText(t1.toFixed(3), left + plotW * 0.5 - 18, top + plotH + 18);
+      pctx.fillText(t2.toFixed(3), left + plotW - 48, top + plotH + 18);
+    }
+
+    function redrawAll(){
+      drawStack();
+      drawHistogram();
+      drawSampleDots();
+    }
+
+    // -----------------------------
+    // Simulation
+    // -----------------------------
+    function sampleCohortYear(){
+      const n = +nSlider.value;
+      const mu = +muSlider.value;
+      const sigma = +sigmaSlider.value;
+      const x = new Array(n);
+      for (let i = 0; i < n; i++){
+        x[i] = mu + sigma * randn();
+      }
+      return x;
+    }
+
+    function computeBootstrapCI(x){
+      const conf = +confSlider.value;
+      const B = +bSlider.value;
+      const alpha = 1 - conf;
+      const xbar = mean(x);
+
+      const bm = bootstrapMeans(x, B);
+      const ci = percentileCI(bm, alpha);
+      return { xbar, bootMeans: bm, lo: ci.lo, hi: ci.hi, alpha };
+    }
+
+    function updateLiveDetails(){
+      if (!showDetails.checked){
+        liveDetails.style.display = "none";
+        return;
+      }
+      liveDetails.style.display = "block";
+
+      const conf = +confSlider.value;
+      const alpha = 1 - conf;
+      const pLo = alpha / 2;
+      const pHi = 1 - alpha / 2;
+
+      alphaLive.textContent = alpha.toFixed(3);
+      qLive.textContent = "(" + pLo.toFixed(3) + ", " + pHi.toFixed(3) + ")";
+
+      if (!lastCI){
+        xbarLive.textContent = "–";
+        ciLive.textContent = "–";
+      } else {
+        xbarLive.textContent = lastXbar.toFixed(3);
+        ciLive.textContent = "[" + lastCI.lo.toFixed(3) + ", " + lastCI.hi.toFixed(3) + "]";
+      }
+    }
+
+    function updateStats(){
+      const drawn = intervals.length;
+      drawnVal.textContent = String(drawn);
+      hitVal.textContent = String(hits);
+      missVal.textContent = String(misses);
+      const cov = drawn > 0 ? (100 * hits / drawn) : 0;
+      covVal.textContent = cov.toFixed(1) + "%";
+    }
+
+    function drawOne(){
+      const mu = +muSlider.value;
+
+      const x = sampleCohortYear();
+      const out = computeBootstrapCI(x);
+
+      const lo = out.lo, hi = out.hi;
+      const hit = (lo <= mu && mu <= hi);
+
+      intervals.push({ lo, hi, hit });
+      if (hit) hits += 1; else misses += 1;
+
+      lastSample = x;
+      lastBootMeans = out.bootMeans;
+      lastCI = { lo, hi };
+      lastXbar = out.xbar;
+
+      updateStats();
+      updateLiveDetails();
+      redrawAll();
+    }
+
+    function drawBatch(k){
+      for (let i = 0; i < k; i++) drawOne();
+    }
+
+    // -----------------------------
+    // Auto-run
+    // -----------------------------
+    function loop(timestamp){
+      if (!running) return;
+
+      const speed = +speedSlider.value;
+      const rate = 10 * speed; // bootstrap is heavier, keep it sensible
+
+      if (!loop.last) loop.last = timestamp;
+      const dt = (timestamp - loop.last) / 1000;
+      loop.last = timestamp;
+
+      acc += dt * rate;
+
+      const maxPerFrame = 30;
+      const todo = Math.min(Math.floor(acc), maxPerFrame);
+
+      if (todo > 0){
+        acc -= todo;
+        for (let i = 0; i < todo; i++) drawOne();
+      }
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function startAuto(){
+      if (running) return;
+      running = true;
+      autoBtn.disabled = true;
+      stopBtn.disabled = false;
+      loop.last = null;
+      acc = 0;
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function stopAuto(){
+      running = false;
+      autoBtn.disabled = false;
+      stopBtn.disabled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    function resetAll(){
+      stopAuto();
+      intervals = [];
+      hits = 0;
+      misses = 0;
+      lastSample = null;
+      lastBootMeans = null;
+      lastCI = null;
+      lastXbar = null;
+      updateStats();
+      updateLiveDetails();
+      redrawAll();
+    }
+
+    // -----------------------------
+    // UI hooks
+    // -----------------------------
+    function updateLabels(){
+      nVal.textContent = String(+nSlider.value);
+      confVal.textContent = (+confSlider.value).toFixed(2);
+      sigmaVal.textContent = (+sigmaSlider.value).toFixed(3);
+      muVal.textContent = (+muSlider.value).toFixed(3);
+      bVal.textContent = String(+bSlider.value);
+      batchVal.textContent = String(+batchSlider.value);
+      speedVal.textContent = (+speedSlider.value).toFixed(2) + "x";
+    }
+
+    function onControlChange(){
+      updateLabels();
+      updateLiveDetails();
+      redrawAll();
+    }
+
+    [nSlider, confSlider, sigmaSlider, muSlider, bSlider, batchSlider, speedSlider].forEach(el => {
+      el.addEventListener('input', onControlChange);
+    });
+
+    showDetails.addEventListener('change', ()=>updateLiveDetails());
+
+    oneBtn.addEventListener('click', () => drawOne());
+    manyBtn.addEventListener('click', () => drawBatch(+batchSlider.value));
+    autoBtn.addEventListener('click', startAuto);
+    stopBtn.addEventListener('click', stopAuto);
+    resetBtn.addEventListener('click', resetAll);
+
+    // Credible interval contrast toggle
+    credBtn.addEventListener('click', () => {
+      const showing = credPanel.style.display !== "none";
+      credPanel.style.display = showing ? "none" : "block";
+      typesetMath();
+    });
+
+    // Initial
+    updateLabels();
+    updateStats();
+    updateLiveDetails();
+    redrawAll();
+    activateTab(0);
+    typesetMath();
+  </script>
+  (c) Fayyaz Minhas.
+</body>
+</html>
