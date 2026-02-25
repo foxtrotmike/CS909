@@ -40,9 +40,10 @@ This file lists each top-level file in the repository with a short description o
 - `affine_transformation.ipynb`: Notebook implementing and demonstrating affine transformations and recovery (includes class `AffineTransformation`).
 - `association.html`: Interactive demo (mean, variance, covariance, correlation, entropy, KL divergence, mutual information, total correlation)
 - `attention.html`: representation of a query token changes in a transformer based on its relation to other tokens and the specified transformation
-- `autodiff_backprop.ipynb`: Notebook about automatic differentiation and backpropagation.
+- `autodiff_backprop.ipynb`: Notebook about automatic differentiation and backpropagation. See also `backprop.html`
 - `autodiff_forward.ipynb`: Notebook about forward-mode automatic differentiation.
 - `autoenncoders.ipynb`: Notebook on autoencoders (note: filename contains a small typo).
+- `backprop.html`: Demo about automatic differentiation and backpropagation (See also `autodiff_backprop.ipynb).
 - `barebones.ipynb`: Minimal Representation, Evaluation and Optimization Framework in PyTorch
 - `barebones_tsvm.ipynb`: Notebook showing a barebones Transductive SVM.
 - `barebones_tsvm_clean.ipynb`: Cleaned variant of the barebones TSVM notebook.
