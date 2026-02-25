@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reverse-mode autodiff (backprop) demo</title>
+
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(','\\)']], displayMath: [['\\[','\\]']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+  <style>
+    :root{
+      --bg:#ffffff;
+      --panel:#ffffff;
+      --fg:#111827;
+      --muted:#4b5563;
+      --accent:#2563eb;
+      --ok:#059669;
+      --warn:#d97706;
+      --grid:rgba(17,24,39,0.06);
+      --shadow: 0 10px 24px rgba(0,0,0,0.10);
+    }
+    html, body { height: 100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    .wrap{
+      max-width: 1240px;
+      margin: 18px auto;
+      padding: 0 14px 18px;
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 1050px){
+      .wrap{ grid-template-columns: 1fr; }
+    }
+    .card{
+      background: var(--panel);
+      border: 1px solid rgba(17,24,39,0.10);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card header{
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(17,24,39,0.10);
+      display:flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap:10px;
+      background: linear-gradient(180deg, rgba(37,99,235,0.06), rgba(37,99,235,0.00));
+    }
+    .title{ font-size: 16px; font-weight: 780; letter-spacing: 0.2px; }
+    .subtitle{ color: var(--muted); font-size: 12px; }
+    .body{ padding: 14px 16px; }
+
+    .row{ display:grid; grid-template-columns: 1fr; gap:10px; margin-bottom:10px; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+
+    .ctrl{
+      background: rgba(17,24,39,0.02);
+      border: 1px solid rgba(17,24,39,0.10);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .ctrl label{
+      display:flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap:8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .ctrl input[type="range"]{ width:100%; }
+
+    .btns{ display:flex; flex-wrap:wrap; gap:8px; }
+    button{
+      cursor:pointer;
+      border: 1px solid rgba(17,24,39,0.12);
+      background: rgba(37,99,235,0.10);
+      color: var(--fg);
+      padding: 9px 12px;
+      border-radius: 14px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    button.secondary{ background: rgba(17,24,39,0.06); }
+    button.warn{ background: rgba(217,119,6,0.14); }
+    button:active{ transform: translateY(1px); }
+
+    .pill{
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(17,24,39,0.03);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .small{ font-size: 12px; color: var(--muted); line-height: 1.35; }
+
+    .kpi{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+      margin-top:10px;
+    }
+    .box{
+      background: rgba(17,24,39,0.02);
+      border: 1px solid rgba(17,24,39,0.10);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .box .h{ font-size: 12px; color: var(--muted); margin-bottom:6px; font-weight: 800; }
+    .box .v{ font-size: 13px; font-weight: 850; letter-spacing: 0.2px; }
+
+    .ruleBox{
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(37,99,235,0.06);
+    }
+    .ruleBox .h{ font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 800; }
+    .ruleBox .t{ font-size: 12.5px; color: var(--fg); }
+
+    .right{
+      display:grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+    }
+    .canvasWrap{ padding: 10px 10px 12px; }
+    canvas{
+      width:100%;
+      height:auto;
+      aspect-ratio: 16 / 7;
+      background:#fff;
+      border-radius: 16px;
+      border: 1px solid rgba(17,24,39,0.10);
+      display:block;
+    }
+
+    table{
+      width:100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      overflow:hidden;
+      border-radius: 14px;
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(17,24,39,0.02);
+    }
+    thead th{
+      text-align:left;
+      padding:10px 10px;
+      color: var(--muted);
+      font-weight: 800;
+      border-bottom: 1px solid rgba(17,24,39,0.10);
+      background: rgba(17,24,39,0.03);
+    }
+    tbody td{
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(17,24,39,0.08);
+      vertical-align: top;
+    }
+    tbody tr:last-child td{ border-bottom:none; }
+
+    .legend{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+    }
+    .legend .item{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(17,24,39,0.10);
+      background: rgba(17,24,39,0.02);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot{ width:10px; height:10px; border-radius:999px; background: var(--accent); }
+    .dot.ok{ background: #059669; }
+    .dot.warn{ background: #d97706; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <!-- LEFT -->
+    <section class="card">
+      <header>
+        <div>
+          <div class="title">Reverse-mode autodiff (backprop) demo</div>
+          <div class="subtitle">Chain rule shown with the explicit sum: \(\frac{\partial e}{\partial a}=\sum_i \frac{\partial e}{\partial t_i}\frac{\partial t_i}{\partial a}\)</div>
+        </div>
+        <div class="pill mono">e = (y − (w x + b))² + w²</div>
+      </header>
+
+      <div class="body">
+        <div class="row grid2">
+          <div class="ctrl">
+            <label><span>w</span><span class="mono" id="wVal">2.0</span></label>
+            <input id="w" type="range" min="-5" max="5" value="2" step="0.1" />
+          </div>
+          <div class="ctrl">
+            <label><span>x</span><span class="mono" id="xVal">3.0</span></label>
+            <input id="x" type="range" min="-5" max="5" value="3" step="0.1" />
+          </div>
+        </div>
+
+        <div class="row grid2">
+          <div class="ctrl">
+            <label><span>b</span><span class="mono" id="bVal">1.0</span></label>
+            <input id="b" type="range" min="-5" max="5" value="1" step="0.1" />
+          </div>
+          <div class="ctrl">
+            <label><span>y</span><span class="mono" id="yVal">10.0</span></label>
+            <input id="y" type="range" min="-10" max="10" value="10" step="0.1" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="btns">
+            <button id="btnForward" class="secondary">Step: forward</button>
+            <button id="btnBackward">Step: backward</button>
+            <button id="btnRun" class="warn">Run full backprop</button>
+            <button id="btnReset" class="secondary">Reset</button>
+            <button id="btnRandom" class="secondary">Randomise</button>
+          </div>
+
+          <div class="box">
+            <div class="h">Output and input gradients</div>
+            <div class="v mono" id="outE">e = —</div>
+            <div class="v mono" id="gradsIn" style="margin-top:6px;">∂e/∂w=—  ∂e/∂x=—  ∂e/∂b=—</div>
+          </div>
+
+          <div class="ruleBox">
+            <div class="h">Entire calculation for the current backward node</div>
+            <div class="t" id="currentRule">None yet.</div>
+          </div>
+
+          <div class="box">
+            <div class="h">Selected node (click a node in the graph)</div>
+            <div class="v mono" id="selectedShort">—</div>
+            <div class="ruleBox" style="margin-top:10px;">
+              <div class="h">Entire calculation for the selected node</div>
+              <div class="t" id="selectedRule">Click a node to view its full chain-rule expansion.</div>
+            </div>
+          </div>
+
+          <div class="small">
+            In this graph, a variable like \(w\) influences \(e\) through multiple children (\(t_1\) and \(t_5\)).
+            The demo always shows the sum over children explicitly, matching the notebook notation.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT -->
+    <section class="right">
+      <section class="card">
+        <header>
+          <div>
+            <div class="title">Computation graph</div>
+            <div class="subtitle">Nodes show computation, value, and \(\frac{\partial e}{\partial v}\)</div>
+          </div>
+          <div class="pill mono" id="phasePill">phase: idle</div>
+        </header>
+        <div class="canvasWrap">
+          <canvas id="cv" width="1200" height="525"></canvas>
+          <div class="legend">
+            <div class="item"><span class="dot ok"></span> forward computed</div>
+            <div class="item"><span class="dot"></span> derivative computed</div>
+            <div class="item"><span class="dot warn"></span> active</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header>
+          <div>
+            <div class="title">Values and derivatives</div>
+            <div class="subtitle">Derivatives written as \(\frac{\partial e}{\partial v}\)</div>
+          </div>
+          <div class="pill mono">local messages</div>
+        </header>
+        <div class="body">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 90px;">Node</th>
+                <th>Computation</th>
+                <th style="width: 150px;">Value</th>
+                <th style="width: 210px;">Derivative</th>
+              </tr>
+            </thead>
+            <tbody id="tbl"></tbody>
+          </table>
+
+          <div style="height: 12px;"></div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 190px;">Backward step</th>
+                <th>Explicit sum form shown</th>
+              </tr>
+            </thead>
+            <tbody id="msgs"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script>
+    // --------------------------
+    // Graph definition
+    // --------------------------
+    const nodeDefs = [
+      { id:"w", kind:"input", eq:"w" },
+      { id:"x", kind:"input", eq:"x" },
+      { id:"b", kind:"input", eq:"b" },
+      { id:"y", kind:"input", eq:"y" },
+
+      { id:"t1", kind:"op",  in:["w","x"],  eq:"t_1 = w x" },
+      { id:"t2", kind:"op",  in:["t1","b"], eq:"t_2 = t_1 + b" },
+      { id:"t3", kind:"op",  in:["y","t2"], eq:"t_3 = y - t_2" },
+      { id:"t4", kind:"op",  in:["t3"],     eq:"t_4 = t_3^2" },
+      { id:"t5", kind:"op",  in:["w"],      eq:"t_5 = w^2" },
+      { id:"e",  kind:"out", in:["t4","t5"],eq:"e = t_4 + t_5" }
+    ];
+
+    // Parent pointers (for forward)
+    const parentsOf = Object.create(null);
+    for (const nd of nodeDefs) {
+      parentsOf[nd.id] = nd.in ? [...nd.in] : [];
+    }
+
+    // Children pointers (for showing sum over children in chain rule)
+    const childrenOf = Object.create(null);
+    for (const nd of nodeDefs) childrenOf[nd.id] = [];
+    for (const nd of nodeDefs){
+      for (const p of (nd.in || [])) childrenOf[p].push(nd.id);
+    }
+
+    const edges = [];
+    for (const nd of nodeDefs) {
+      for (const p of (nd.in || [])) edges.push({ from: p, to: nd.id });
+    }
+
+    // Layout positions (flatter)
+    const pos = {
+      y:  { x: 100, y: 70 },
+      w:  { x: 100, y: 185 },
+      x:  { x: 100, y: 320 },
+      b:  { x: 100, y: 455 },
+
+      t1: { x: 350, y: 255 },
+      t2: { x: 520, y: 360 },
+      t3: { x: 690, y: 230 },
+      t4: { x: 870, y: 255 },
+      t5: { x: 690, y: 455 },
+      e:  { x: 1080,y: 315 }
+    };
+
+    // --------------------------
+    // State
+    // --------------------------
+    const state = {
+      values: Object.create(null),
+      grads: Object.create(null),      // grads[v] = ∂e/∂v
+      forwardDone: new Set(),
+      backwardDone: new Set(),
+      activeNode: null,
+      selectedNode: null,
+      phase: "idle",
+      msgs: [],
+      forwardOrder: ["t1","t2","t3","t4","t5","e"],
+      backwardOrder: ["e","t5","t4","t3","t2","t1"],
+      fIdx: 0,
+      bIdx: 0
+    };
+
+    // --------------------------
+    // Helpers
+    // --------------------------
+    const $ = (id) => document.getElementById(id);
+
+    function fmt(v){
+      if (v === null || v === undefined) return "—";
+      if (!Number.isFinite(v)) return String(v);
+      const s = v.toFixed(4);
+      return s.replace(/(\.\d*?[1-9])0+$/,"$1").replace(/\.0+$/,"");
+    }
+
+    function setPhase(ph){
+      state.phase = ph;
+      $("phasePill").textContent = `phase: ${ph}`;
+    }
+
+    function initAllGradsToZero(){
+      for (const nd of nodeDefs) state.grads[nd.id] = 0;
+    }
+
+    function computeInputs(){
+      state.values.w = Number($("w").value);
+      state.values.x = Number($("x").value);
+      state.values.b = Number($("b").value);
+      state.values.y = Number($("y").value);
+
+      $("wVal").textContent = fmt(state.values.w);
+      $("xVal").textContent = fmt(state.values.x);
+      $("bVal").textContent = fmt(state.values.b);
+      $("yVal").textContent = fmt(state.values.y);
+    }
+
+    function resetAll(){
+      state.values = Object.create(null);
+      state.grads = Object.create(null);
+      initAllGradsToZero();
+
+      state.forwardDone = new Set(["w","x","b","y"]);
+      state.backwardDone = new Set();
+
+      state.activeNode = null;
+      state.selectedNode = null;
+      state.msgs = [];
+      state.fIdx = 0;
+      state.bIdx = 0;
+
+      $("currentRule").textContent = "None yet.";
+      $("selectedShort").textContent = "—";
+      $("selectedRule").textContent = "Click a node to view its full chain-rule expansion.";
+
+      setPhase("idle");
+      computeInputs();
+      renderAll();
+    }
+
+    // --------------------------
+    // Forward pass
+    // --------------------------
+    function forwardNode(id){
+      const w = state.values.w, x = state.values.x, b = state.values.b, y = state.values.y;
+
+      if (id === "t1") state.values.t1 = w * x;
+      else if (id === "t2") state.values.t2 = state.values.t1 + b;
+      else if (id === "t3") state.values.t3 = y - state.values.t2;
+      else if (id === "t4") state.values.t4 = state.values.t3 * state.values.t3;
+      else if (id === "t5") state.values.t5 = w * w;
+      else if (id === "e")  state.values.e  = state.values.t4 + state.values.t5;
+
+      state.forwardDone.add(id);
+    }
+
+    // --------------------------
+    // Local derivatives (for chain rule display and propagation)
+    // --------------------------
+    function localDerivative(child, parent){
+      // Returns ∂(child)/∂(parent) evaluated at current values, for direct edges only.
+      if (child === "e" && parent === "t4") return 1;
+      if (child === "e" && parent === "t5") return 1;
+
+      if (child === "t5" && parent === "w") return 2 * state.values.w;
+
+      if (child === "t4" && parent === "t3") return 2 * state.values.t3;
+
+      if (child === "t3" && parent === "y") return 1;
+      if (child === "t3" && parent === "t2") return -1;
+
+      if (child === "t2" && parent === "t1") return 1;
+      if (child === "t2" && parent === "b") return 1;
+
+      if (child === "t1" && parent === "w") return state.values.x;
+      if (child === "t1" && parent === "x") return state.values.w;
+
+      return 0;
+    }
+
+    // --------------------------
+    // Full chain-rule expansion for a given parent variable a
+    // in notebook form: ∂e/∂a = Σ_{t ∈ children(a)} (∂e/∂t)(∂t/∂a)
+    // --------------------------
+    function chainRuleSumLatex(a){
+      const kids = childrenOf[a] || [];
+      if (kids.length === 0){
+        // For the output itself:
+        if (a === "e") return `\\[\\frac{\\partial e}{\\partial e}=1\\]`;
+        return `\\[\\frac{\\partial e}{\\partial ${a}} = 0\\quad\\text{(no children in the graph)}\\]`;
+      }
+
+      const sumSymbol = `\\sum_{t\\in \\mathcal{C}(${a})}`;
+      const rhs = `${sumSymbol} \\frac{\\partial e}{\\partial t}\\cdot\\frac{\\partial t}{\\partial ${a}}`;
+
+      // Expand the sum into explicit terms
+      const terms = kids.map(t => {
+        const loc = localDerivative(t, a);
+        const locStr = fmt(loc);
+        return `\\left(\\frac{\\partial e}{\\partial ${t}}\\right)\\cdot\\left(\\frac{\\partial ${t}}{\\partial ${a}}\\right) = \\left(\\frac{\\partial e}{\\partial ${t}}\\right)\\cdot(${locStr})`;
+      }).join(" \\, + \\, ");
+
+      // Also show the numeric evaluation once those child gradients exist
+      const numericPossible = kids.every(t => state.backwardDone.has(t) || t==="e") && state.backwardDone.size>0;
+      let numericLine = "";
+      if (numericPossible){
+        const val = kids.reduce((acc,t)=> acc + (state.grads[t] ?? 0)*localDerivative(t,a), 0);
+        numericLine =
+          `\\[= ${kids.map(t=>`(${fmt(state.grads[t])})\\cdot(${fmt(localDerivative(t,a))})`).join(" + ")} = ${fmt(val)}\\]`;
+      }
+
+      return (
+        `\\[\\frac{\\partial e}{\\partial ${a}} = ${rhs}\\]` +
+        `\\[= ${terms}\\]` +
+        numericLine
+      );
+    }
+
+    // --------------------------
+    // Backward step rules (propagation) but display uses explicit sum form
+    // --------------------------
+    function backwardNode(id){
+      const g = (k) => (state.grads[k] ?? 0);
+      const addg = (k, dv) => { state.grads[k] = g(k) + dv; };
+
+      const pushMsg = (step, html) => {
+        state.msgs.unshift({ step, html });
+        if (state.msgs.length > 10) state.msgs.pop();
+      };
+
+      // Seed and propagate along edges out of this node (standard reverse traversal).
+      // Display: show chain rule for each parent of this node.
+      if (id === "e") {
+        state.grads.e = 1;
+      }
+
+      // For each parent p of the current node id:
+      //   contribution to ∂e/∂p from this path is (∂e/∂id)(∂id/∂p)
+      const ps = parentsOf[id] || [];
+      for (const p of ps){
+        addg(p, g(id) * localDerivative(id, p));
+      }
+
+      state.backwardDone.add(id);
+
+      // Build "entire calculation" panel for the *current backward node*:
+      // show: for each parent p, the explicit sum form for p (because p may have multiple children)
+      // and then highlight the term coming from the current node id.
+      if (id === "e"){
+        $("currentRule").innerHTML =
+          `Seed gradient:` +
+          `\\[\\frac{\\partial e}{\\partial e}=1\\]` +
+          `Then for each parent \\(p\\in\\{t_4,t_5\\}\\):` +
+          `\\[\\frac{\\partial e}{\\partial p} = \\sum_{t\\in \\mathcal{C}(p)} \\frac{\\partial e}{\\partial t}\\cdot\\frac{\\partial t}{\\partial p}\\]` +
+          `In this graph, \\(\\mathcal{C}(t_4)=\\{e\\}\\) and \\(\\mathcal{C}(t_5)=\\{e\\}\\), so` +
+          `\\[\\frac{\\partial e}{\\partial t_4} = \\frac{\\partial e}{\\partial e}\\cdot\\frac{\\partial e}{\\partial t_4} = 1\\cdot 1 = 1\\]` +
+          `\\[\\frac{\\partial e}{\\partial t_5} = \\frac{\\partial e}{\\partial e}\\cdot\\frac{\\partial e}{\\partial t_5} = 1\\cdot 1 = 1\\]`;
+      } else {
+        const lines = ps.map(p => {
+          // Show the sum for p, and the specific term from the current node id.
+          const term = `\\[\\text{Term from current child }(${id}):\\quad \\left(\\frac{\\partial e}{\\partial ${id}}\\right)\\cdot\\left(\\frac{\\partial ${id}}{\\partial ${p}}\\right)` +
+                       `= (${fmt(state.grads[id])})\\cdot(${fmt(localDerivative(id,p))})\\]`;
+          return (
+            `For parent \\(${p}\\), use the sum form:` +
+            chainRuleSumLatex(p) +
+            term
+          );
+        }).join("");
+
+        $("currentRule").innerHTML =
+          `Current backward node: \\(${id}\\)` +
+          `\\[\\text{We propagate to each parent }p\\in\\mathcal{P}(${id})\\text{ using the chain rule.}\\]` +
+          lines;
+      }
+
+      // Local message table row: show sum form for each affected parent p
+      for (const p of ps){
+        pushMsg(
+          `${id} → ${p}`,
+          `We update \\(\\frac{\\partial e}{\\partial ${p}}\\) by adding the contribution from this path:` +
+          `\\[\\frac{\\partial e}{\\partial ${p}} \\text{ gets a contribution } \\left(\\frac{\\partial e}{\\partial ${id}}\\right)\\left(\\frac{\\partial ${id}}{\\partial ${p}}\\right).\\]` +
+          `In the full notebook form: ` +
+          `\\[\\frac{\\partial e}{\\partial ${p}} = \\sum_{t\\in \\mathcal{C}(${p})} \\frac{\\partial e}{\\partial t}\\cdot\\frac{\\partial t}{\\partial ${p}}\\]`
+        );
+      }
+
+      renderMsgs();
+      renderAll();
+    }
+
+    // --------------------------
+    // Selected node: show full sum form calculation (and numeric evaluation if possible)
+    // --------------------------
+    function renderSelectedPanel(){
+      const a = state.selectedNode;
+      if (!a){
+        $("selectedShort").textContent = "—";
+        $("selectedRule").textContent = "Click a node to view its full chain-rule expansion.";
+        return;
+      }
+      const v = state.forwardDone.has(a) ? fmt(state.values[a]) : "—";
+      const d = (state.backwardDone.size > 0) ? fmt(state.grads[a]) : "—";
+
+      $("selectedShort").textContent = `${a}: v=${v}  ∂e/∂${a}=${d}`;
+      $("selectedRule").innerHTML =
+        `We use the notebook chain rule with an explicit sum over children:` +
+        `\\[\\frac{\\partial e}{\\partial ${a}} = \\sum_{t\\in \\mathcal{C}(${a})} \\frac{\\partial e}{\\partial t}\\cdot\\frac{\\partial t}{\\partial ${a}}\\]` +
+        chainRuleSumLatex(a);
+    }
+
+    // --------------------------
+    // Stepping / running
+    // --------------------------
+    function stepForward(){
+      setPhase("forward");
+      if (state.fIdx >= state.forwardOrder.length){
+        setPhase("forward done");
+        state.activeNode = null;
+        renderAll();
+        return;
+      }
+      const id = state.forwardOrder[state.fIdx++];
+      state.activeNode = id;
+      forwardNode(id);
+      renderAll();
+    }
+
+    function stepBackward(){
+      setPhase("backward");
+      if (!state.forwardDone.has("e")){
+        while (state.fIdx < state.forwardOrder.length){
+          forwardNode(state.forwardOrder[state.fIdx++]);
+        }
+      }
+      if (state.bIdx >= state.backwardOrder.length){
+        setPhase("backward done");
+        state.activeNode = null;
+        renderAll();
+        return;
+      }
+      const id = state.backwardOrder[state.bIdx++];
+      state.activeNode = id;
+      backwardNode(id);
+    }
+
+    function runFull(){
+      // Reset grads/messages but keep inputs
+      state.grads = Object.create(null);
+      initAllGradsToZero();
+      state.backwardDone = new Set();
+      state.msgs = [];
+      state.bIdx = 0;
+
+      while (state.fIdx < state.forwardOrder.length){
+        forwardNode(state.forwardOrder[state.fIdx++]);
+      }
+
+      setPhase("running");
+      const delay = 180;
+      let i = 0;
+      const ids = [...state.backwardOrder];
+
+      const tick = () => {
+        if (i >= ids.length){
+          state.activeNode = null;
+          setPhase("backward done");
+          renderAll();
+          return;
+        }
+        state.activeNode = ids[i];
+        backwardNode(ids[i]);
+        i += 1;
+        state.bIdx = i;
+        setTimeout(tick, delay);
+      };
+
+      tick();
+    }
+
+    function randomise(){
+      const rnd = (a,b) => a + Math.random()*(b-a);
+      $("w").value = rnd(-4,4).toFixed(1);
+      $("x").value = rnd(-4,4).toFixed(1);
+      $("b").value = rnd(-4,4).toFixed(1);
+      $("y").value = rnd(-8,8).toFixed(1);
+      resetAll();
+    }
+
+    // --------------------------
+    // Rendering
+    // --------------------------
+    function renderMsgs(){
+      const tbody = $("msgs");
+      tbody.innerHTML = "";
+      for (const m of state.msgs){
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td");
+        const td2 = document.createElement("td");
+        td1.className = "mono";
+        td1.textContent = m.step;
+        td2.innerHTML = m.html;
+        tr.appendChild(td1);
+        tr.appendChild(td2);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function renderTable(){
+      const tbody = $("tbl");
+      tbody.innerHTML = "";
+
+      for (const nd of nodeDefs){
+        const tr = document.createElement("tr");
+
+        const tdN = document.createElement("td");
+        tdN.className = "mono";
+        tdN.textContent = nd.id;
+
+        const tdEq = document.createElement("td");
+        tdEq.textContent = nd.eq;
+
+        const tdV = document.createElement("td");
+        tdV.className = "mono";
+        tdV.textContent = state.forwardDone.has(nd.id) ? fmt(state.values[nd.id]) : "—";
+
+        const tdG = document.createElement("td");
+        tdG.className = "mono";
+        const hasBackward = state.backwardDone.size > 0;
+        tdG.textContent = hasBackward ? fmt(state.grads[nd.id]) : "—";
+
+        tr.appendChild(tdN);
+        tr.appendChild(tdEq);
+        tr.appendChild(tdV);
+        tr.appendChild(tdG);
+        tbody.appendChild(tr);
+      }
+
+      $("outE").textContent = state.forwardDone.has("e") ? `e = ${fmt(state.values.e)}` : "e = —";
+      const hasBackward = state.backwardDone.size > 0;
+      $("gradsIn").textContent = hasBackward
+        ? `∂e/∂w=${fmt(state.grads.w)}  ∂e/∂x=${fmt(state.grads.x)}  ∂e/∂b=${fmt(state.grads.b)}`
+        : "∂e/∂w=—  ∂e/∂x=—  ∂e/∂b=—";
+    }
+
+    function drawArrow(ctx, x1,y1,x2,y2, headLen=10){
+      const dx = x2-x1, dy = y2-y1;
+      const ang = Math.atan2(dy,dx);
+      const pad = 55;
+      const sx = x1 + Math.cos(ang)*pad;
+      const sy = y1 + Math.sin(ang)*pad;
+      const ex = x2 - Math.cos(ang)*pad;
+      const ey = y2 - Math.sin(ang)*pad;
+
+      ctx.beginPath();
+      ctx.moveTo(sx,sy);
+      ctx.lineTo(ex,ey);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(ex,ey);
+      ctx.lineTo(ex - headLen*Math.cos(ang - Math.PI/6), ey - headLen*Math.sin(ang - Math.PI/6));
+      ctx.lineTo(ex - headLen*Math.cos(ang + Math.PI/6), ey - headLen*Math.sin(ang + Math.PI/6));
+      ctx.closePath();
+      ctx.fillStyle = "rgba(17,24,39,0.18)";
+      ctx.fill();
+    }
+
+    function renderCanvas(){
+      const cv = $("cv");
+      const ctx = cv.getContext("2d");
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0,0,W,H);
+
+      // grid
+      ctx.save();
+      ctx.strokeStyle = "rgba(17,24,39,0.06)";
+      ctx.lineWidth = 1;
+      for (let x=0; x<=W; x+=80){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+      for (let y=0; y<=H; y+=80){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+      ctx.restore();
+
+      // edges
+      ctx.save();
+      ctx.strokeStyle = "rgba(17,24,39,0.20)";
+      ctx.lineWidth = 2;
+      for (const e of edges){
+        const a = pos[e.from], b = pos[e.to];
+        drawArrow(ctx, a.x, a.y, b.x, b.y, 10);
+      }
+      ctx.restore();
+
+      // nodes
+      for (const nd of nodeDefs){
+        const P = pos[nd.id];
+        const isF = state.forwardDone.has(nd.id);
+        const isB = state.backwardDone.has(nd.id);
+        const isA = state.activeNode === nd.id;
+        const isS = state.selectedNode === nd.id;
+
+        let fill = "rgba(17,24,39,0.02)";
+        let stroke = "rgba(17,24,39,0.20)";
+        if (isF) { fill = "rgba(5,150,105,0.10)"; stroke = "rgba(5,150,105,0.45)"; }
+        if (isB) { fill = "rgba(37,99,235,0.10)"; stroke = "rgba(37,99,235,0.45)"; }
+        if (isA) { fill = "rgba(217,119,6,0.14)"; stroke = "rgba(217,119,6,0.60)"; }
+        if (isS) { stroke = "rgba(17,24,39,0.80)"; }
+
+        const r = 38;
+
+        ctx.beginPath();
+        ctx.arc(P.x, P.y, r, 0, Math.PI*2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // Equation (compact)
+        ctx.fillStyle = "rgba(17,24,39,0.92)";
+        ctx.font = "800 12px ui-sans-serif, system-ui, -apple-system";
+        ctx.fillText(nd.eq.replaceAll("_",""), P.x, P.y - 12);
+
+        // Value
+        ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+        const vtxt = state.forwardDone.has(nd.id) ? `v=${fmt(state.values[nd.id])}` : "v=—";
+        ctx.fillText(vtxt, P.x, P.y + 6);
+
+        // Derivative
+        ctx.fillStyle = "rgba(17,24,39,0.80)";
+        const dtxt = (state.backwardDone.size > 0) ? `∂e/∂${nd.id}=${fmt(state.grads[nd.id])}` : `∂e/∂${nd.id}=—`;
+        ctx.fillText(dtxt, P.x, P.y + 24);
+      }
+    }
+
+    function renderAll(){
+      renderCanvas();
+      renderTable();
+      renderSelectedPanel();
+      if (window.MathJax && MathJax.typesetPromise){
+        MathJax.typesetPromise().catch(() => {});
+      }
+    }
+
+    // --------------------------
+    // Interaction
+    // --------------------------
+    function hitTestNode(mx,my){
+      for (const nd of nodeDefs){
+        const p0 = pos[nd.id];
+        const dx = mx - p0.x, dy = my - p0.y;
+        if (dx*dx + dy*dy <= 38*38) return nd.id;
+      }
+      return null;
+    }
+
+    $("cv").addEventListener("mousemove", (ev) => {
+      const r = $("cv").getBoundingClientRect();
+      const mx = (ev.clientX - r.left) * ($("cv").width / r.width);
+      const my = (ev.clientY - r.top) * ($("cv").height / r.height);
+      $("cv").style.cursor = hitTestNode(mx,my) ? "pointer" : "default";
+    });
+
+    $("cv").addEventListener("click", (ev) => {
+      const r = $("cv").getBoundingClientRect();
+      const mx = (ev.clientX - r.left) * ($("cv").width / r.width);
+      const my = (ev.clientY - r.top) * ($("cv").height / r.height);
+      const id = hitTestNode(mx,my);
+      if (!id) return;
+      state.selectedNode = (state.selectedNode === id) ? null : id;
+      renderAll();
+    });
+
+    for (const id of ["w","x","b","y"]) {
+      $(id).addEventListener("input", () => resetAll());
+    }
+
+    $("btnForward").addEventListener("click", () => stepForward());
+    $("btnBackward").addEventListener("click", () => stepBackward());
+    $("btnRun").addEventListener("click", () => runFull());
+    $("btnReset").addEventListener("click", () => resetAll());
+    $("btnRandom").addEventListener("click", () => randomise());
+
+    // Initialise
+    resetAll();
+  </script>
+  <footer style="
+  text-align:center;
+  font-size:12px;
+  color:#4b5563;
+  padding:14px 0 18px;
+">
+  © <span id="year"></span> Fayyaz Minhas
+</footer>
+
+</body>
+</html>
