@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MagLev STE: Train Bang-Bang Controller, position sensor Position Only (TF.js)</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0"></script>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; margin:18px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  .card { border:1px solid #ddd; border-radius:12px; padding:12px; }
+  label { display:block; margin:10px 0 4px; }
+  input[type="range"] { width:100%; }
+  button { padding:8px 10px; border-radius:10px; border:1px solid #bbb; background:#f7f7f7; cursor:pointer; }
+  button:active { transform: translateY(1px); }
+  .controls { min-width: 420px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  .small { color:#444; font-size:13px; line-height:1.35; }
+  canvas { border:1px solid #ddd; border-radius:12px; background:#fff; }
+  .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; margin-right:6px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+</style>
+</head>
+<body>
+
+<h2>MagLev: learn a hard on–off controller with STE (position-only sensing)</h2>
+<div class="small">
+In this simulation, a magnetic levitation system learns a simple on–off control program using only a position sensor, estimating motion from recent observations and adjusting when to fire the magnet so the ball stays near a target height. The controller observes only position and infers speed from recent measurements as a change in position over time, optionally smoothed. It should turn the magnet on when the target is above the current position or when the ball is moving downward, and turn it off when the ball is already above the target and moving upward, so it fires whenever upward correction is needed and stays off when the motion is already favourable. The controller computes a score from the position error and estimated velocity, with coefficients (kp and kv) that are learned to minimise tracking error over time. The forward action is a real bang-bang program that switches the magnet fully on or off, while training uses a straight-through estimator so gradients can still be propagated through this hard decision.
+  <br>
+  <span class="mono">v_hat = (x − x_prev)/dt</span> (optionally EMA-smoothed).<br> 
+  Controller score: <span class="mono">z = kp(x* − x) − kv v_hat</span>.<br>
+  Forward action is a real program: <span class="mono">A = 1[z&gt;0]</span> (bang-bang).<br>
+  Backprop uses a straight-through estimator with surrogate gradient from <span class="mono">sigmoid(βz)</span>.
+</div>
+
+<div class="row" style="margin-top:14px;">
+  <div class="card controls">
+    <h3 style="margin:0 0 6px;">Controls</h3>
+
+    <label>Initial height x0: <span class="mono" id="x0Val">5.00</span></label>
+    <input id="x0" type="range" min="0" max="10" step="0.01" value="5">
+
+    <label>Initial true velocity v0 (physics only): <span class="mono" id="v0Val">0.00</span></label>
+    <input id="v0" type="range" min="-10" max="10" step="0.01" value="0">
+
+    <label>Target height x*: <span class="mono" id="tgtVal">5.00</span></label>
+    <input id="tgt" type="range" min="0.5" max="9.5" step="0.01" value="5">
+
+    <label>Training: <span class="mono" id="trainVal">ON</span></label>
+    <input id="train" type="range" min="0" max="1" step="1" value="1">
+
+    <label>Simulation speed: <span class="mono" id="speedVal">10</span> steps/frame</label>
+    <input id="speed" type="range" min="1" max="40" step="1" value="10">
+
+    <label>position sensor smoothing (EMA on v_hat): <span class="mono" id="smoothVal">0.30</span></label>
+    <input id="smooth" type="range" min="0" max="0.95" step="0.01" value="0.30">
+
+    <label>STE sharpness β (surrogate slope): <span class="mono" id="betaVal">8</span></label>
+    <input id="beta" type="range" min="1" max="40" step="1" value="8">
+
+    <div style="display:flex; gap:10px; margin-top:12px;">
+      <button id="resetBtn">Reset simulation</button>
+      <button id="toggleBtn">Pause</button>
+    </div>
+
+    <div class="grid2" style="margin-top:10px;">
+      <button id="resetParamsBtn">Reset parameters</button>
+      <button id="randomParamsBtn">Randomise parameters</button>
+    </div>
+
+    <div style="margin-top:12px;">
+      <div class="small">Learned parameters:</div>
+      <div style="margin-top:6px;">
+        <span class="pill mono" id="kpVal">kp=0.800</span>
+        <span class="pill mono" id="kvVal">kv=0.200</span>
+      </div>
+      <div class="small" style="margin-top:10px;">
+        Mode:
+        <span class="mono" id="modeText">TRAINING: hard forward + STE gradients</span>
+      </div>
+
+      <div class="small" style="margin-top:10px;">
+        Hard control program (used in testing, and also as the forward pass in training):
+        <div class="mono" style="margin-top:6px;">
+          v_hat = (x − x_prev)/dt<br>
+          z = kp(x* − x) − kv v_hat<br>
+          if z &gt; 0: A = 1 else: A = 0
+        </div>
+      </div>
+    </div>
+
+    <div class="small" style="margin-top:10px;">
+      Loss used in training (per episode):
+      <div class="mono" style="margin-top:6px;">
+        L = (1/T) Σ_t w_t |x_t − x*|,  w_t increases with t
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 8px;">World view</h3>
+    <canvas id="world" width="260" height="520"></canvas>
+    <div class="small" style="margin-top:8px;">
+      Blue line: target. Black circle: ball. Red bar: magnet action A.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 8px;">Plots</h3>
+    <canvas id="plot" width="820" height="520"></canvas>
+    <div class="small" style="margin-top:8px;">
+      Top: x* (blue) and x (black). Middle: true v (green) and inferred v_hat (grey). Bottom: A (red).
+    </div>
+  </div>
+</div>
+
+<script>
+/* -----------------------------
+   Physics
+   ----------------------------- */
+const m = 1.0;
+const g = 9.8;
+const F = 2.0 * g;
+const dt = 0.05;
+
+function stepJS(x, v, A){
+  const a = (A * F / m) - g;
+  let v1 = v + a * dt;
+  let x1 = x + v * dt + 0.5 * a * dt * dt;
+
+  // enforce physical bounds
+  if(x1 <= 0.0){
+    x1 = 0.0;
+    v1 = 0.0;
+  } else if(x1 >= 10.0){
+    x1 = 10.0;
+    v1 = 0.0;
+  }
+
+  return {x: x1, v: v1};
+}
+
+/* -----------------------------
+   Learnable parameters (TF.js)
+   ----------------------------- */
+let kp = tf.variable(tf.scalar(0.8, "float32"));
+let kv = tf.variable(tf.scalar(0.2, "float32"));
+const opt = tf.train.adam(0.05);
+
+/* -----------------------------
+   Straight-through Heaviside with sigmoid surrogate gradient
+   forward: y = 1[x > 0]
+   backward: dy/dx = sigmoid(beta*x)*(1-sigmoid(beta*x))*beta
+   ----------------------------- */
+function steHeaviside(x, beta){
+  return tf.customGrad((xTensor, save) => {
+    const b = tf.scalar(beta, "float32");
+    const z = xTensor.mul(b);
+    const s = tf.sigmoid(z);
+    const y = xTensor.greater(tf.scalar(0)).toFloat();
+    save([s, b]);
+
+    const gradFunc = (dy, saved) => {
+      const [sSaved, bSaved] = saved;
+      const ds_dx = sSaved.mul(tf.scalar(1).sub(sSaved)).mul(bSaved);
+      return dy.mul(ds_dx);
+    };
+    return { value: y, gradFunc };
+  })(x);
+}
+
+/* -----------------------------
+   Training (differentiable unroll)
+   Controller observes position only and estimates v_hat from x history.
+   Forward A is hard, gradients are straight-through.
+   ----------------------------- */
+function trainOneBatch(alpha, beta){
+  const lossTensor = opt.minimize(() => tf.tidy(() => {
+    let x = tf.scalar(Math.random() * 10.0);
+    let v = tf.scalar((Math.random() - 0.5) * 20.0);
+    const xStar = tf.scalar(0.5 + Math.random() * 9.0);
+
+    let xPrev = x;
+    let vHatSmooth = tf.scalar(0.0);
+
+    const T = 120;
+    let total = tf.scalar(0.0);
+
+    for(let t=0; t<T; t++){
+      const vHat = x.sub(xPrev).div(dt);
+      vHatSmooth = vHatSmooth.mul(alpha).add(vHat.mul(1.0 - alpha));
+
+      const zCtrl = kp.mul(xStar.sub(x)).sub(kv.mul(vHatSmooth));
+      const A = steHeaviside(zCtrl, beta);
+
+      const a = A.mul(F).sub(g);
+      const v1 = v.add(a.mul(dt));
+      const x1 = x.add(v.mul(dt)).add(a.mul(0.5*dt*dt)).clipByValue(0.0, 10.0);
+
+      xPrev = x;
+      x = x1;
+      v = v1;
+
+      const err = x.sub(xStar).abs();
+      const w = 0.2 + 0.8 * (t / (T - 1)); // late-step emphasis
+      total = total.add(err.mul(w));
+    }
+    return total.div(T);
+  }), true);
+
+  const lossVal = lossTensor.dataSync()[0];
+  lossTensor.dispose();
+  return lossVal;
+}
+
+/* -----------------------------
+   UI elements
+   ----------------------------- */
+const x0Slider = document.getElementById("x0");
+const v0Slider = document.getElementById("v0");
+const tgtSlider = document.getElementById("tgt");
+const trainSlider = document.getElementById("train");
+const speedSlider = document.getElementById("speed");
+const smoothSlider = document.getElementById("smooth");
+const betaSlider = document.getElementById("beta");
+
+const x0Val = document.getElementById("x0Val");
+const v0Val = document.getElementById("v0Val");
+const tgtVal = document.getElementById("tgtVal");
+const trainVal = document.getElementById("trainVal");
+const speedVal = document.getElementById("speedVal");
+const smoothVal = document.getElementById("smoothVal");
+const betaVal = document.getElementById("betaVal");
+
+const kpValSpan = document.getElementById("kpVal");
+const kvValSpan = document.getElementById("kvVal");
+const modeText = document.getElementById("modeText");
+
+function syncLabels(){
+  x0Val.textContent = (+x0Slider.value).toFixed(2);
+  v0Val.textContent = (+v0Slider.value).toFixed(2);
+  tgtVal.textContent = (+tgtSlider.value).toFixed(2);
+  trainVal.textContent = (+trainSlider.value === 1) ? "ON" : "OFF";
+  speedVal.textContent = (+speedSlider.value).toFixed(0);
+  smoothVal.textContent = (+smoothSlider.value).toFixed(2);
+  betaVal.textContent = (+betaSlider.value).toFixed(0);
+}
+[x0Slider, v0Slider, tgtSlider, trainSlider, speedSlider, smoothSlider, betaSlider].forEach(el => el.addEventListener("input", syncLabels));
+syncLabels();
+
+/* -----------------------------
+   Simulation state (display) and position sensor memory
+   ----------------------------- */
+let sim = {
+  x: +x0Slider.value,
+  v: +v0Slider.value,
+  xStar: +tgtSlider.value,
+  A: 0.0,
+  running: true,
+
+  xPrevObs: +x0Slider.value,
+  vHatSmooth: 0.0
+};
+
+const N = 300;
+let hist = {x:[], v:[], xStar:[], A:[], vHat:[]};
+
+function historyReset(){
+  hist = {x:[], v:[], xStar:[], A:[], vHat:[]};
+}
+
+function historyPush(vHat){
+  hist.x.push(sim.x);
+  hist.v.push(sim.v);
+  hist.xStar.push(sim.xStar);
+  hist.A.push(sim.A);
+  hist.vHat.push(vHat);
+  if(hist.x.length > N){
+    hist.x.shift(); hist.v.shift(); hist.xStar.shift(); hist.A.shift(); hist.vHat.shift();
+  }
+}
+
+/* -----------------------------
+   Buttons
+   ----------------------------- */
+document.getElementById("resetBtn").addEventListener("click", () => {
+  sim.x = +x0Slider.value;
+  sim.v = +v0Slider.value;
+  sim.xStar = +tgtSlider.value;
+  sim.xPrevObs = sim.x;
+  sim.vHatSmooth = 0.0;
+  sim.A = 0.0;
+  historyReset();
+});
+
+document.getElementById("toggleBtn").addEventListener("click", (e) => {
+  sim.running = !sim.running;
+  e.target.textContent = sim.running ? "Pause" : "Resume";
+});
+
+document.getElementById("resetParamsBtn").addEventListener("click", () => {
+  tf.tidy(() => {
+    kp.assign(tf.scalar(0.8));
+    kv.assign(tf.scalar(0.2));
+  });
+});
+
+document.getElementById("randomParamsBtn").addEventListener("click", () => {
+  tf.tidy(() => {
+    // mild randomisation so it does not explode too often
+    const kpInit = (Math.random() - 0.5) * 3.0;  // ~[-1.5, 1.5]
+    const kvInit = (Math.random() - 0.5) * 3.0;
+    kp.assign(tf.scalar(kpInit));
+    kv.assign(tf.scalar(kvInit));
+  });
+});
+
+/* -----------------------------
+   World view drawing
+   ----------------------------- */
+const world = document.getElementById("world");
+const wctx = world.getContext("2d");
+
+function drawWorld(){
+  const W = world.width, H = world.height;
+  wctx.clearRect(0,0,W,H);
+
+  const yFromX = (x) => (H - 20) - (x/10.0) * (H - 40);
+
+  // rail
+  wctx.strokeStyle = "#bbb";
+  wctx.lineWidth = 2;
+  wctx.beginPath();
+  wctx.moveTo(W/2, 20);
+  wctx.lineTo(W/2, H-20);
+  wctx.stroke();
+
+  // target
+  const yT = yFromX(sim.xStar);
+  wctx.strokeStyle = "#1f77b4";
+  wctx.lineWidth = 2;
+  wctx.beginPath();
+  wctx.moveTo(30, yT);
+  wctx.lineTo(W-30, yT);
+  wctx.stroke();
+
+  // magnet block
+  wctx.fillStyle = "#222";
+  wctx.fillRect(W/2 - 40, 8, 80, 14);
+  wctx.fillStyle = "#fff";
+  wctx.font = "11px system-ui, sans-serif";
+  wctx.fillText("MAGNET", W/2 - 28, 19);
+
+  // ball
+  const y = yFromX(sim.x);
+  wctx.fillStyle = "#111";
+  wctx.beginPath();
+  wctx.arc(W/2, y, 14, 0, 2*Math.PI);
+  wctx.fill();
+
+  // action bar
+  const barH = 170;
+  const barX = W - 28, barY = H - 20 - barH;
+  wctx.strokeStyle = "#bbb";
+  wctx.lineWidth = 1;
+  wctx.strokeRect(barX, barY, 10, barH);
+  wctx.fillStyle = "#d62728";
+  const filled = sim.A * barH;
+  wctx.fillRect(barX, (H - 20) - filled, 10, filled);
+
+  // labels
+  wctx.fillStyle = "#111";
+  wctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+  wctx.fillText(`x=${sim.x.toFixed(2)}`, 10, 34);
+  wctx.fillText(`v=${sim.v.toFixed(2)}`, 10, 50);
+  wctx.fillText(`A=${sim.A.toFixed(2)}`, 10, 66);
+  wctx.fillText(`v_hat=${sim.vHatSmooth.toFixed(2)}`, 10, 82);
+}
+
+/* -----------------------------
+   Plotting: three panes
+   ----------------------------- */
+const plot = document.getElementById("plot");
+const ctx = plot.getContext("2d");
+
+function drawFrame(){
+  const W = plot.width, H = plot.height;
+  ctx.clearRect(0,0,W,H);
+
+  const L = 56, R = 20, T = 16, B = 26;
+  const innerW = W - L - R;
+  const innerH = H - T - B;
+
+  const gap = 12;
+  const paneH = (innerH - 2*gap) / 3;
+
+  const panes = [
+    {y0: T,                 h: paneH, title: "Position x and target x* (0..10)"},
+    {y0: T + paneH + gap,   h: paneH, title: "Velocity: true v (green) and inferred v_hat (grey)"},
+    {y0: T + 2*(paneH+gap), h: paneH, title: "Controller A (hard, 0 or 1)"}
+  ];
+
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillStyle = "#111";
+
+  for(const p of panes){
+    ctx.strokeStyle = "#ccc";
+    ctx.strokeRect(L, p.y0, innerW, p.h);
+    ctx.fillText(p.title, 10, p.y0 + 12);
+
+    ctx.strokeStyle = "#eee";
+    for(let i=1;i<=4;i++){
+      const yy = p.y0 + (p.h * i / 5);
+      ctx.beginPath();
+      ctx.moveTo(L, yy);
+      ctx.lineTo(L + innerW, yy);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = "#444";
+  ctx.fillText("time (recent →)", W/2 - 44, H - 8);
+
+  return {L, innerW, panes};
+}
+
+function plotLine(arr, pane, yMap, strokeStyle, width){
+  const W = plot.width;
+  const L = 56, R = 20;
+  const innerW = W - L - R;
+  if(arr.length < 2) return;
+
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  for(let i=0;i<arr.length;i++){
+    const x = L + innerW * (i / (N - 1));
+    const y = pane.y0 + pane.h * yMap(arr[i]);
+    if(i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
+function drawPlots(){
+  const frame = drawFrame();
+  const panes = frame.panes;
+
+  const yPos = (x) => 1.0 - (x / 10.0);
+  const yVel = (v) => 1.0 - ((v + 10.0) / 20.0);
+  const yAct = (a) => 1.0 - a;
+
+  plotLine(hist.xStar, panes[0], yPos, "#1f77b4", 2);
+  plotLine(hist.x,     panes[0], yPos, "#111111", 2);
+
+  plotLine(hist.v,    panes[1], yVel, "#2ca02c", 2);
+  plotLine(hist.vHat, panes[1], yVel, "#777777", 2);
+
+  plotLine(hist.A, panes[2], yAct, "#d62728", 2);
+
+  ctx.fillStyle = "#111";
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText("x* (blue), x (black)", 60, panes[0].y0 + panes[0].h - 6);
+}
+
+/* -----------------------------
+   Main loop
+   ----------------------------- */
+function tick(){
+  const trainingOn = (+trainSlider.value === 1);
+  modeText.textContent = trainingOn
+    ? "TRAINING: hard forward + STE gradients"
+    : "TESTING: hard controller (same program)";
+
+  kpValSpan.textContent = `kp=${kp.dataSync()[0].toFixed(3)}`;
+  kvValSpan.textContent = `kv=${kv.dataSync()[0].toFixed(3)}`;
+
+  sim.xStar = +tgtSlider.value;
+
+  const alpha = +smoothSlider.value;
+  const beta = +betaSlider.value;
+
+  // Train a bit per frame if enabled
+  if(trainingOn){
+    for(let i=0;i<2;i++) trainOneBatch(alpha, beta);
+  }
+
+  if(sim.running){
+    const stepsPerFrame = +speedSlider.value;
+
+    for(let i=0;i<stepsPerFrame;i++){
+      // position sensor speed estimate
+      const vHatRaw = (sim.x - sim.xPrevObs) / dt;
+      sim.vHatSmooth = alpha * sim.vHatSmooth + (1.0 - alpha) * vHatRaw;
+
+      // hard program in display simulation
+      const kpValNow = kp.dataSync()[0];
+      const kvValNow = kv.dataSync()[0];
+      const z = kpValNow * (sim.xStar - sim.x) - kvValNow * sim.vHatSmooth;
+      sim.A = (z > 0) ? 1.0 : 0.0;
+
+      // physics evolution (true v is hidden from controller)
+      const out = stepJS(sim.x, sim.v, sim.A);
+
+      // update position sensor memory and state
+      sim.xPrevObs = sim.x;
+      sim.x = out.x;
+      sim.v = out.v;
+
+      historyPush(sim.vHatSmooth);
+    }
+  }
+
+  drawWorld();
+  drawPlots();
+  requestAnimationFrame(tick);
+}
+
+// init
+historyReset();
+sim.xPrevObs = sim.x;
+sim.vHatSmooth = 0.0;
+tick();
+</script>
+<div style="margin-top:12px; font-size:12px; color:#666;">
+  (c) Fayyaz Minhas
+</div>
+</body>
+</html>
