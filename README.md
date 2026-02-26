@@ -115,6 +115,7 @@ This file lists each top-level file in the repository with a short description o
 - `transformation.html`: HTML notes on geometric transformations.
 - `transformations.ipynb`: Notebook covering geometric transformations and examples.
 - `trees.ipynb`: Notebook covering decision trees and tree-based methods.
+- `uniapprox.html`: Demo on universal approximation.
 - `uniapprox.ipynb`: Notebook on universal approximation.
 - `vapnik.ipynb`: Notebook discussing Vapnik's theories (statistical learning theory / SVMs).
 - `vapnik2.ipynb`: Follow-up notebook to `vapnik.ipynb` with more examples.
