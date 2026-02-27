@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>MagLev STE: Train Bang-Bang Controller, position sensor Position Only (TF.js)</title>
+<title>Magnetic Levitation: Train Bang-Bang Controller (TF.js)</title>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0"></script>
 <style>
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; margin:18px; }
@@ -22,14 +22,23 @@
 </head>
 <body>
 
-<h2>MagLev: learn a hard on–off controller with STE (position-only sensing)</h2>
+<h2>MagLev: learn a on–off controller model with position-only sensing</h2>
 <div class="small">
 In this simulation, a magnetic levitation system learns a simple on–off control program using only a position sensor, estimating motion from recent observations and adjusting when to fire the magnet so the ball stays near a target height. The controller observes only position and infers speed from recent measurements as a change in position over time, optionally smoothed. It should turn the magnet on when the target is above the current position or when the ball is moving downward, and turn it off when the ball is already above the target and moving upward, so it fires whenever upward correction is needed and stays off when the motion is already favourable. The controller computes a score from the position error and estimated velocity, with coefficients (kp and kv) that are learned to minimise tracking error over time. The forward action is a real bang-bang program that switches the magnet fully on or off, while training uses a straight-through estimator so gradients can still be propagated through this hard decision.
   <br>
-  <span class="mono">v_hat = (x − x_prev)/dt</span> (optionally EMA-smoothed).<br> 
-  Controller score: <span class="mono">z = kp(x* − x) − kv v_hat</span>.<br>
-  Forward action is a real program: <span class="mono">A = 1[z&gt;0]</span> (bang-bang).<br>
-  Backprop uses a straight-through estimator with surrogate gradient from <span class="mono">sigmoid(βz)</span>.
+  Representation:
+  <br>
+  Estimate velocity from position: <span class="mono">v_hat = (x − x_prev)/dt</span> (optionally smooth with moving averages).<br> 
+  Controller model score parameterised by kp and kv: <span class="mono">z = kp(x* − x) − kv v_hat</span>.<br>
+  Output Action (Magnetic on or off): <span class="mono">A = 1[z&gt;0]</span> (bang-bang).<br>
+  <br>
+  Evaluation:
+  <br>
+  Loss is essentially the absolute difference between the position of the ball and the and target position over time
+  <br>
+  Optimization:
+  <br>
+  Using Gradient Descent with a straight-through estimator as the model is non-differentiable with surrogate gradient from <span class="mono">sigmoid(βz)</span>.
 </div>
 
 <div class="row" style="margin-top:14px;">
@@ -525,4 +534,5 @@ tick();
   (c) Fayyaz Minhas
 </div>
 </body>
+
 </html>
