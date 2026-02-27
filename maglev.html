@@ -26,7 +26,7 @@
 <div class="small">
 In this simulation, a magnetic levitation system learns a simple on–off control program using only a position sensor, estimating motion from recent observations and adjusting when to fire the magnet so the ball stays near a target height. The controller observes only position and infers speed from recent measurements as a change in position over time, optionally smoothed. It should turn the magnet on when the target is above the current position or when the ball is moving downward, and turn it off when the ball is already above the target and moving upward, so it fires whenever upward correction is needed and stays off when the motion is already favourable. The controller computes a score from the position error and estimated velocity, with coefficients (kp and kv) that are learned to minimise tracking error over time. The forward action is a real bang-bang program that switches the magnet fully on or off, while training uses a straight-through estimator so gradients can still be propagated through this hard decision.
   <br>
-  Representation:
+  Representation: Input is position of the ball (x) and the output is an action A (1 or 0) to switch the magnet on or off
   <br>
   Estimate velocity from position: <span class="mono">v_hat = (x − x_prev)/dt</span> (optionally smooth with moving averages).<br> 
   Controller model score parameterised by kp and kv: <span class="mono">z = kp(x* − x) − kv v_hat</span>.<br>
@@ -38,7 +38,7 @@ In this simulation, a magnetic levitation system learns a simple on–off contro
   <br>
   Optimization:
   <br>
-  Using Gradient Descent with a straight-through estimator as the model is non-differentiable with surrogate gradient from <span class="mono">sigmoid(βz)</span>.
+  Optimize the loss with respect to model parameters (Kp and Kv) Using Gradient Descent with a straight-through estimator (STE) as the model is non-differentiable (due to the step function) so we use a surrogate gradient from <span class="mono">sigmoid(βz)</span>.
 </div>
 
 <div class="row" style="margin-top:14px;">
@@ -536,3 +536,4 @@ tick();
 </body>
 
 </html>
+
