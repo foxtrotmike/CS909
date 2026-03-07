@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>From applying filters to the world's simplest CNN</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #475569;
+      --accent: #2563eb;
+      --success: #16a34a;
+      --border: #cbd5e1;
+      --soft: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      max-width: 980px;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 430px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel, .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+    }
+
+    .panel {
+      padding: 16px;
+      position: sticky;
+      top: 14px;
+    }
+
+    .card {
+      padding: 14px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0 0 10px;
+    }
+
+    .subsection {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--soft);
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    label {
+      font-size: 0.94rem;
+      font-weight: 600;
+    }
+
+    .value {
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      min-width: 64px;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="number"] {
+      width: 100%;
+      background: white;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+    }
+
+    .btns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 11px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #0f172a;
+      background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+    }
+
+    button.success {
+      background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+      color: #14532d;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    .main {
+      display: grid;
+      gap: 18px;
+    }
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 18px;
+    }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 18px;
+      align-items: start;
+      margin-top: 18px;
+    }
+
+    canvas.img {
+      width: 100%;
+      max-width: 320px;
+      aspect-ratio: 1 / 1;
+      image-rendering: pixelated;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: white;
+    }
+
+    canvas.colorbar {
+      width: 100%;
+      max-width: 320px;
+      height: 46px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: white;
+    }
+
+    .caption {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .metric {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+    }
+
+    .metric .num {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+      color: #0f172a;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      height: 150px;
+      overflow: auto;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .panel { position: static; }
+      .top-grid, .image-grid, .bottom-grid { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>From applying filters to the world's simplest CNN</h1>
+    <div class="subtitle">
+      A self-contained TensorFlow.js demo for teaching convolution as learned filtering. Generate simple images, try classic filters, and train a single convolution filter to respond to plus-sign regions.
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="section-title">Controls</div>
+
+        <div class="subsection">
+          <div class="section-title">Set up image</div>
+          <div class="controls">
+            <div>
+              <label for="seed">Random seed</label>
+              <input id="seed" type="number" value="7" min="0" step="1" />
+            </div>
+            <div>
+              <label for="numPlus">Number of plus signs</label>
+              <input id="numPlus" type="number" value="4" min="1" max="8" step="1" />
+            </div>
+            <div>
+              <label for="numMinus">Number of minus signs</label>
+              <input id="numMinus" type="number" value="4" min="1" max="8" step="1" />
+            </div>
+            <div class="row">
+              <label for="noise">Noise level</label>
+              <div class="value" id="noiseVal">0.08</div>
+            </div>
+            <input id="noise" type="range" min="0" max="0.3" value="0.08" step="0.01" />
+          </div>
+          <div class="btns">
+            <button id="regenBtn">Regenerate example</button>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="section-title">Given kernels</div>
+          <div class="btns">
+            <button id="randomKernelBtn" class="secondary">Random kernel</button>
+            <button id="plusKernelBtn" class="secondary">Plus detector</button>
+            <button id="minusKernelBtn" class="secondary">Minus detector</button>
+            <button id="laplaceKernelBtn" class="secondary">Edge detector</button>
+            <button id="blurKernelBtn" class="secondary">Blur</button>
+            <button id="sharpenKernelBtn" class="secondary">Sharpen</button>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="section-title">Learn kernel</div>
+          <div class="controls">
+            <div class="row">
+              <label for="learningRate">Learning rate</label>
+              <div class="value" id="learningRateVal">0.05</div>
+            </div>
+            <input id="learningRate" type="range" min="0.001" max="0.2" value="0.05" step="0.001" />
+
+            <div class="row">
+              <label for="steps">Training steps</label>
+              <div class="value" id="stepsVal">300</div>
+            </div>
+            <input id="steps" type="range" min="1" max="1200" value="300" step="1" />
+          </div>
+          <div class="btns">
+            <button id="trainBtn" class="success">Train filter</button>
+            <button id="stepBtn" class="secondary">Train 1 step</button>
+            <button id="resetLearnedBtn" class="secondary">Reset learned filter</button>
+          </div>
+        </div>
+
+        <div class="section-title">Training log</div>
+        <div id="log" class="log">Ready.</div>
+      </div>
+
+      <div class="main">
+        <div class="card">
+          <h3>What this demonstrates</h3>
+          <div class="small">
+            The output at each location is a dot product between a local image patch and a filter. With hand-crafted filters you can see classical image operations. With learning, gradient descent updates the filter so that plus-sign regions become bright.
+          </div>
+        </div>
+
+        <div class="top-grid">
+          <div class="card">
+            <h3>Images</h3>
+            <div class="image-grid">
+              <div>
+                <canvas id="inputCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Input image. Size: <span id="inputSizeLabel"></span></div>
+              </div>
+              <div>
+                <canvas id="targetCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Target map. Size: <span id="targetSizeLabel"></span></div>
+              </div>
+              <div>
+                <canvas id="outputCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Filter response. Size: <span id="outputSizeLabel"></span></div>
+              </div>
+            </div>
+
+            <div class="bottom-grid">
+              <div>
+                <canvas id="thresholdCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Thresholded output.</div>
+              </div>
+
+              <div class="subsection" style="margin:0;">
+                <div class="section-title">Threshold output</div>
+                <div class="row">
+                  <label for="threshold">Threshold</label>
+                  <div class="value" id="thresholdVal">0.75</div>
+                </div>
+                <input id="threshold" type="range" min="0" max="1" value="0.75" step="0.01" />
+              </div>
+
+              <div>
+                <canvas id="colorbarCanvas" class="colorbar" width="320" height="46"></canvas>
+                <div class="caption">Shared grayscale colour bar for all image panels. Range: <span id="colorbarRange">0 to 1</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Kernel and loss</h3>
+            <div class="image-grid" style="grid-template-columns: repeat(2, minmax(180px, 1fr));">
+              <div>
+                <canvas id="kernelCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Current 5×5 kernel with values shown in each cell.</div>
+              </div>
+              <div>
+                <canvas id="lossCanvas" class="img" width="320" height="320"></canvas>
+                <div class="caption">Training loss history.</div>
+              </div>
+            </div>
+
+            <div class="metric-grid">
+              <div class="metric">
+                <div class="label">Current loss</div>
+                <div class="num" id="lossMetric">-</div>
+              </div>
+              <div class="metric">
+                <div class="label">Peak response</div>
+                <div class="num" id="peakMetric">-</div>
+              </div>
+              <div class="metric">
+                <div class="label">Kernel L2 norm</div>
+                <div class="num" id="normMetric">-</div>
+              </div>
+              <div class="metric">
+                <div class="label">Mode</div>
+                <div class="num" id="modeMetric">Manual</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">(c) Fayyaz Minhas</div>
+  </div>
+
+  <script>
+    const IMAGE_SIZE = 20;
+    const KERNEL_SIZE = 5;
+    const PAD = Math.floor(KERNEL_SIZE / 2);
+    const DRAW_SCALE = 10;
+
+    let currentImage = null;
+    let currentTarget = null;
+    let currentOutput = null;
+    let currentLoss = null;
+    let lossHistory = [];
+    let learnedKernelVar = null;
+    let biasVar = null;
+    let optimiser = null;
+    let currentMode = "Manual";
+    let rng = null;
+    let isTraining = false;
+    let sharedDisplayMin = 0;
+    let sharedDisplayMax = 1;
+    let currentKernelValues = null;
+
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function randn(random) {
+      let u = 0, v = 0;
+      while (u === 0) u = random();
+      while (v === 0) v = random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    function clamp(x, lo, hi) {
+      return Math.max(lo, Math.min(hi, x));
+    }
+
+    function reshapeKernel(values) {
+      const out = [];
+      for (let r = 0; r < KERNEL_SIZE; r++) {
+        out.push(values.slice(r * KERNEL_SIZE, (r + 1) * KERNEL_SIZE));
+      }
+      return out;
+    }
+
+    function drawMatrixToCanvas(mat, canvasId, { normalize = true, binary = false, minVal = null, maxVal = null } = {}) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext("2d");
+      const h = mat.length;
+      const w = mat[0].length;
+      const imageData = ctx.createImageData(w * DRAW_SCALE, h * DRAW_SCALE);
+
+      let localMin = Infinity;
+      let localMax = -Infinity;
+
+      if (normalize && (minVal == null || maxVal == null)) {
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const v = mat[y][x];
+            if (v < localMin) localMin = v;
+            if (v > localMax) localMax = v;
+          }
+        }
+        if (localMax - localMin < 1e-8) localMax = localMin + 1e-8;
+      }
+
+      const lo = minVal == null ? localMin : minVal;
+      const hi = maxVal == null ? localMax : maxVal;
+
+      for (let y = 0; y < h * DRAW_SCALE; y++) {
+        for (let x = 0; x < w * DRAW_SCALE; x++) {
+          const srcY = Math.floor(y / DRAW_SCALE);
+          const srcX = Math.floor(x / DRAW_SCALE);
+          let v = mat[srcY][srcX];
+
+          if (binary) {
+            v = v ? 255 : 0;
+          } else if (normalize) {
+            v = Math.round(255 * (v - lo) / Math.max(hi - lo, 1e-8));
+            v = clamp(v, 0, 255);
+          } else {
+            v = clamp(Math.round(255 * v), 0, 255);
+          }
+
+          const idx = (y * w * DRAW_SCALE + x) * 4;
+          imageData.data[idx] = v;
+          imageData.data[idx + 1] = v;
+          imageData.data[idx + 2] = v;
+          imageData.data[idx + 3] = 255;
+        }
+      }
+
+      canvas.width = w * DRAW_SCALE;
+      canvas.height = h * DRAW_SCALE;
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function drawKernel(values) {
+      currentKernelValues = [...values];
+      const mat = reshapeKernel(values);
+      drawMatrixToCanvas(mat, "kernelCanvas", { normalize: true });
+
+      const canvas = document.getElementById("kernelCanvas");
+      const ctx = canvas.getContext("2d");
+      const cellW = canvas.width / KERNEL_SIZE;
+      const cellH = canvas.height / KERNEL_SIZE;
+
+      ctx.strokeStyle = "#64748b";
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${Math.floor(cellW * 0.18)}px sans-serif`;
+
+      for (let r = 0; r < KERNEL_SIZE; r++) {
+        for (let c = 0; c < KERNEL_SIZE; c++) {
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+          ctx.fillText(mat[r][c].toFixed(1), c * cellW + cellW / 2, r * cellH + cellH / 2);
+        }
+      }
+    }
+
+    function drawLoss() {
+      const canvas = document.getElementById("lossCanvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = 320;
+      canvas.height = 320;
+
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        const y = (canvas.height / 5) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      if (lossHistory.length < 2) return;
+
+      const minLoss = Math.min(...lossHistory);
+      const maxLoss = Math.max(...lossHistory);
+      const range = Math.max(maxLoss - minLoss, 1e-8);
+
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+
+      lossHistory.forEach((loss, i) => {
+        const x = (i / Math.max(lossHistory.length - 1, 1)) * (canvas.width - 10) + 5;
+        const y = canvas.height - 10 - ((loss - minLoss) / range) * (canvas.height - 20);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      ctx.stroke();
+    }
+
+    function drawColorbar(minVal, maxVal) {
+      const canvas = document.getElementById("colorbarCanvas");
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, "rgb(255,255,255)");
+      grad.addColorStop(1, "rgb(0,0,0)");
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(10, 10, w - 20, 18);
+
+      ctx.strokeStyle = "#64748b";
+      ctx.strokeRect(10, 10, w - 20, 18);
+
+      ctx.fillStyle = "#111827";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(minVal.toFixed(1), 10, 40);
+      ctx.fillText(((minVal + maxVal) / 2).toFixed(1), w / 2 - 10, 40);
+      ctx.fillText(maxVal.toFixed(1), w - 34, 40);
+
+      document.getElementById("colorbarRange").textContent = `${minVal.toFixed(1)} to ${maxVal.toFixed(1)}`;
+    }
+
+    function placePattern(img, cx, cy, pattern) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          img[cy + dy][cx + dx] = pattern[dy + 1][dx + 1];
+        }
+      }
+    }
+
+    function generateExample() {
+      const seed = parseInt(document.getElementById("seed").value || "0", 10);
+      rng = mulberry32(seed);
+
+      const numPlus = parseInt(document.getElementById("numPlus").value || "4", 10);
+      const numMinus = parseInt(document.getElementById("numMinus").value || "4", 10);
+      const noise = parseFloat(document.getElementById("noise").value || "0.08");
+
+      const img = Array.from({ length: IMAGE_SIZE }, () => Array(IMAGE_SIZE).fill(0));
+      const target = Array.from({ length: IMAGE_SIZE }, () => Array(IMAGE_SIZE).fill(0));
+
+      const plusPattern = [
+        [0, 1, 0],
+        [1, 1, 1],
+        [0, 1, 0]
+      ];
+
+      const minusPattern = [
+        [0, 0, 0],
+        [1, 1, 1],
+        [0, 0, 0]
+      ];
+
+      const occupied = [];
+
+      function sampleCentre() {
+        for (let tries = 0; tries < 500; tries++) {
+          const x = PAD + 1 + Math.floor(rng() * (IMAGE_SIZE - 2 * PAD - 2));
+          const y = PAD + 1 + Math.floor(rng() * (IMAGE_SIZE - 2 * PAD - 2));
+
+          let ok = true;
+          for (const [ox, oy] of occupied) {
+            if (Math.abs(x - ox) < 4 && Math.abs(y - oy) < 4) {
+              ok = false;
+              break;
+            }
+          }
+
+          if (ok) {
+            occupied.push([x, y]);
+            return [x, y];
+          }
+        }
+        return [PAD + 1, PAD + 1];
+      }
+
+      for (let i = 0; i < numPlus; i++) {
+        const [x, y] = sampleCentre();
+        placePattern(img, x, y, plusPattern);
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const dist = Math.abs(dx) + Math.abs(dy);
+            target[y + dy][x + dx] = Math.max(
+              target[y + dy][x + dx],
+              dist === 0 ? 1.0 : dist === 1 ? 0.6 : 0.25
+            );
+          }
+        }
+      }
+
+      for (let i = 0; i < numMinus; i++) {
+        const [x, y] = sampleCentre();
+        placePattern(img, x, y, minusPattern);
+      }
+
+      for (let y = 0; y < IMAGE_SIZE; y++) {
+        for (let x = 0; x < IMAGE_SIZE; x++) {
+          img[y][x] = clamp(img[y][x] + noise * randn(rng), 0, 1);
+        }
+      }
+
+      currentImage = img;
+      currentTarget = target;
+      sharedDisplayMin = 0;
+      sharedDisplayMax = 1;
+
+      drawMatrixToCanvas(currentImage, "inputCanvas", { normalize: true, minVal: 0, maxVal: 1 });
+      drawMatrixToCanvas(currentTarget, "targetCanvas", { normalize: true, minVal: 0, maxVal: 1 });
+      drawColorbar(0, 1);
+
+      document.getElementById("inputSizeLabel").textContent = `${IMAGE_SIZE}×${IMAGE_SIZE}`;
+      document.getElementById("targetSizeLabel").textContent = `${IMAGE_SIZE}×${IMAGE_SIZE}`;
+
+      log(`Generated example with seed=${seed}, size=${IMAGE_SIZE}×${IMAGE_SIZE}, plus=${numPlus}, minus=${numMinus}, noise=${noise.toFixed(2)}.`);
+
+      if (currentKernelValues) {
+        applyKernelValues(currentKernelValues, "Manual");
+      }
+    }
+
+    function imageTensorFromMatrix(mat) {
+      return tf.tensor4d(mat.flat(), [1, IMAGE_SIZE, IMAGE_SIZE, 1]);
+    }
+
+    function kernelTensorFromValues(values) {
+      return tf.tensor4d(values, [KERNEL_SIZE, KERNEL_SIZE, 1, 1]);
+    }
+
+    function centreCropTargetTensor() {
+      const crop = [];
+      for (let y = PAD; y < IMAGE_SIZE - PAD; y++) {
+        for (let x = PAD; x < IMAGE_SIZE - PAD; x++) {
+          crop.push(currentTarget[y][x]);
+        }
+      }
+      return tf.tensor4d(crop, [1, IMAGE_SIZE - 2 * PAD, IMAGE_SIZE - 2 * PAD, 1]);
+    }
+
+    async function applyKernelValues(values, mode = "Manual") {
+      if (!currentImage) return;
+
+      currentMode = mode;
+      updateMode();
+
+      const result = tf.tidy(() => {
+        const x = imageTensorFromMatrix(currentImage);
+        const k = kernelTensorFromValues(values);
+        const y = tf.conv2d(x, k, 1, "valid");
+        return tf.tanh(y).squeeze();
+      });
+
+      const arr = await result.array();
+      result.dispose();
+
+      currentOutput = arr;
+      renderOutput(arr);
+      drawKernel(values);
+      updateMetrics(null, arr, values);
+    }
+
+    function renderOutput(arr) {
+      drawMatrixToCanvas(arr, "outputCanvas", {
+        normalize: true,
+        minVal: sharedDisplayMin,
+        maxVal: sharedDisplayMax
+      });
+
+      const threshold = parseFloat(document.getElementById("threshold").value || "0.75");
+      const binary = arr.map(row => row.map(v => v > threshold ? 1 : 0));
+      drawMatrixToCanvas(binary, "thresholdCanvas", { binary: true });
+
+      let maxVal = -Infinity;
+      for (const row of arr) {
+        for (const v of row) {
+          if (v > maxVal) maxVal = v;
+        }
+      }
+
+      document.getElementById("peakMetric").textContent = maxVal.toFixed(3);
+      document.getElementById("outputSizeLabel").textContent = `${arr[0].length}×${arr.length}`;
+    }
+
+    function kernelNorm(values) {
+      return Math.sqrt(values.reduce((s, v) => s + v * v, 0));
+    }
+
+    function updateMode() {
+      document.getElementById("modeMetric").textContent = currentMode;
+    }
+
+    function updateMetrics(loss, output, kernelValues) {
+      document.getElementById("lossMetric").textContent = loss == null ? "-" : loss.toFixed(4);
+      document.getElementById("normMetric").textContent = kernelNorm(kernelValues).toFixed(3);
+      updateMode();
+    }
+
+    function log(text) {
+      const el = document.getElementById("log");
+      const ts = new Date().toLocaleTimeString();
+      el.textContent += `\n[${ts}] ${text}`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function resetLearnedParameters(randomise = true) {
+      if (learnedKernelVar) learnedKernelVar.dispose();
+      if (biasVar) biasVar.dispose();
+
+      const init = randomise
+        ? Array.from({ length: KERNEL_SIZE * KERNEL_SIZE }, () => (Math.random() * 2 - 1) * 0.2)
+        : Array(KERNEL_SIZE * KERNEL_SIZE).fill(0);
+
+      learnedKernelVar = tf.variable(tf.tensor4d(init, [KERNEL_SIZE, KERNEL_SIZE, 1, 1]));
+      biasVar = tf.variable(tf.scalar(0));
+      lossHistory = [];
+      currentLoss = null;
+
+      drawKernel(init);
+      drawLoss();
+      updateMetrics(null, currentOutput || [[0]], init);
+      log(`Reset learnable filter (${randomise ? "random initialisation" : "zero initialisation"}).`);
+    }
+
+    async function trainSteps(numSteps) {
+      if (!currentImage || isTraining) return;
+      if (!learnedKernelVar || !biasVar) resetLearnedParameters(true);
+
+      isTraining = true;
+      document.getElementById("trainBtn").disabled = true;
+      document.getElementById("stepBtn").disabled = true;
+
+      currentMode = "Learned";
+      updateMode();
+
+      const lr = parseFloat(document.getElementById("learningRate").value || "0.05");
+      optimiser = tf.train.adam(lr);
+
+      const x = imageTensorFromMatrix(currentImage);
+      const t = centreCropTargetTensor();
+
+      try {
+        for (let i = 0; i < numSteps; i++) {
+          const lossTensor = optimiser.minimize(() => {
+            const y = tf.conv2d(x, learnedKernelVar, 1, "valid").add(biasVar);
+            const z = tf.tanh(y);
+            const posWeight = tf.add(tf.mul(t, 3.0), 1.0);
+            return tf.mean(tf.mul(posWeight, tf.square(tf.sub(z, t))));
+          }, true, [learnedKernelVar, biasVar]);
+
+          const lossValue = (await lossTensor.data())[0];
+          lossTensor.dispose();
+
+          currentLoss = lossValue;
+          lossHistory.push(lossValue);
+
+          if (i % 10 === 0 || i === numSteps - 1) {
+            const y = tf.conv2d(x, learnedKernelVar, 1, "valid").add(biasVar);
+            const z = tf.tanh(y).squeeze();
+
+            const outArr = await z.array();
+            const kernArr = Array.from(await learnedKernelVar.data());
+
+            y.dispose();
+            z.dispose();
+
+            currentOutput = outArr;
+            currentKernelValues = [...kernArr];
+            renderOutput(outArr);
+            drawKernel(kernArr);
+            drawLoss();
+            updateMetrics(lossValue, outArr, kernArr);
+
+            await tf.nextFrame();
+          }
+        }
+
+        log(`Completed ${numSteps} training steps. Final loss=${currentLoss.toFixed(4)}.`);
+      } finally {
+        x.dispose();
+        t.dispose();
+        isTraining = false;
+        document.getElementById("trainBtn").disabled = false;
+        document.getElementById("stepBtn").disabled = false;
+      }
+    }
+
+    function attachValueLabel(id) {
+      const input = document.getElementById(id);
+      const label = document.getElementById(id + "Val");
+
+      const update = () => {
+        label.textContent = Number(input.value).toFixed(id === "steps" ? 0 : 2);
+      };
+
+      input.addEventListener("input", () => {
+        update();
+        if (id === "threshold" && currentOutput) renderOutput(currentOutput);
+      });
+
+      update();
+    }
+
+    function presetPlusKernel() {
+      const vals = [
+        -0.4, -0.4, -0.6, -0.4, -0.4,
+        -0.4,  0.0,  1.0,  0.0, -0.4,
+        -0.6,  1.0,  1.2,  1.0, -0.6,
+        -0.4,  0.0,  1.0,  0.0, -0.4,
+        -0.4, -0.4, -0.6, -0.4, -0.4
+      ];
+      applyKernelValues(vals, "Manual");
+      log("Applied plus detector.");
+    }
+
+    function presetMinusKernel() {
+      const vals = [
+        -0.3, -0.3, -0.3, -0.3, -0.3,
+        -0.2, -0.4, -0.8, -0.4, -0.2,
+        -0.6,  1.0,  1.2,  1.0, -0.6,
+        -0.2, -0.4, -0.8, -0.4, -0.2,
+        -0.3, -0.3, -0.3, -0.3, -0.3
+      ];
+      applyKernelValues(vals, "Manual");
+      log("Applied minus detector.");
+    }
+
+    function presetLaplaceKernel() {
+      const vals = [
+         0,  0, -1,  0,  0,
+         0, -1, -2, -1,  0,
+        -1, -2, 16, -2, -1,
+         0, -1, -2, -1,  0,
+         0,  0, -1,  0,  0
+      ].map(v => v / 8);
+
+      applyKernelValues(vals, "Manual");
+      log("Applied edge detector.");
+    }
+
+    function presetBlurKernel() {
+      const vals = Array(25).fill(1 / 25);
+      applyKernelValues(vals, "Manual");
+      log("Applied blur filter.");
+    }
+
+    function presetSharpenKernel() {
+      const vals = [
+         0,  0, -1,  0,  0,
+         0, -1, -1, -1,  0,
+        -1, -1,  9, -1, -1,
+         0, -1, -1, -1,  0,
+         0,  0, -1,  0,  0
+      ].map(v => v / 3);
+
+      applyKernelValues(vals, "Manual");
+      log("Applied sharpen filter.");
+    }
+
+    function randomKernel() {
+      const vals = Array.from(
+        { length: KERNEL_SIZE * KERNEL_SIZE },
+        () => Number((Math.random() * 2 - 1).toFixed(2))
+      );
+      applyKernelValues(vals, "Manual");
+      log("Applied random kernel.");
+    }
+
+    function bindEvents() {
+      document.getElementById("regenBtn").addEventListener("click", generateExample);
+      document.getElementById("plusKernelBtn").addEventListener("click", presetPlusKernel);
+      document.getElementById("minusKernelBtn").addEventListener("click", presetMinusKernel);
+      document.getElementById("laplaceKernelBtn").addEventListener("click", presetLaplaceKernel);
+      document.getElementById("blurKernelBtn").addEventListener("click", presetBlurKernel);
+      document.getElementById("sharpenKernelBtn").addEventListener("click", presetSharpenKernel);
+      document.getElementById("randomKernelBtn").addEventListener("click", randomKernel);
+
+      document.getElementById("trainBtn").addEventListener("click", async () => {
+        const steps = parseInt(document.getElementById("steps").value || "300", 10);
+        await trainSteps(steps);
+      });
+
+      document.getElementById("stepBtn").addEventListener("click", async () => {
+        await trainSteps(1);
+      });
+
+      document.getElementById("resetLearnedBtn").addEventListener("click", () => {
+        resetLearnedParameters(true);
+      });
+
+      ["noise", "threshold", "learningRate", "steps"].forEach(attachValueLabel);
+    }
+
+    function init() {
+      bindEvents();
+      resetLearnedParameters(true);
+      presetPlusKernel();
+      generateExample();
+      log("TensorFlow.js ready.");
+    }
+
+    init();
+  </script>
+</body>
+</html>
