@@ -52,6 +52,7 @@ This file lists each top-level file in the repository with a short description o
 - `brevitas.ipynb`: Notebook possibly demonstrating brevitas quantized models.
 - `clustering_pytorch.ipynb`: Notebook with clustering examples implemented in PyTorch.
 - `ci.html`: Demonstrates the concept of confidence intervals
+- `cnn_kernels.html`: Learning filters and kernels (see learn_filters.py/ipynb)
 - `cnn_mnist_pytorch.ipynb`: CNN tutorial for MNIST implemented in PyTorch.
 - `denoising_local_pca.ipynb`: Notebook demonstrating denoising with local PCA.
 - `distance_dot.html`: HTML explaining distance measures and dot products.
@@ -81,7 +82,7 @@ This file lists each top-level file in the repository with a short description o
 - `kfold-test.ipynb`: Notebook showing k-fold cross-validation examples.
 - `knn.html`: HTML notes/demos for k-nearest neighbours.
 - `learn_filters.ipynb`: Notebook on learning convolutional filters (shows training a small conv filter to match a target).
-- `learn_filters.py`: Small PyTorch script that learns a 2D convolutional filter from an image and visualises learned kernel.
+- `learn_filters.py`: Small PyTorch script that learns a 2D convolutional filter from an image and visualises learned kernel (see cnn_kernels.html demo as well)
 - `lines.html`: HTML notes about line detection or transformations.
 - `lpips.ipynb`: Notebook exploring LPIPS perceptual similarity metric.
 - `mcdonald.html`: Lagrange multipliers tutorial.
