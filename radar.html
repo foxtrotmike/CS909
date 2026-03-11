@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radar Echo Demo: Convolution and Correlation</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #2563eb;
+      --accent2: #059669;
+      --accent3: #dc2626;
+      --accent4: #7c3aed;
+      --accent5: #d97706;
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .wrap {
+      max-width: 1450px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      line-height: 1.15;
+    }
+
+    .sub {
+      color: var(--muted);
+      margin-bottom: 18px;
+      font-size: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .controls {
+      position: sticky;
+      top: 16px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      margin: 0 0 10px;
+      font-weight: 700;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin: 10px 0;
+    }
+
+    label {
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    input[type="range"] { width: 100%; }
+
+    select, textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 6px 18px rgba(37,99,235,0.25);
+    }
+
+    button.secondary {
+      background: #eef2ff;
+      color: #1d4ed8;
+      box-shadow: none;
+    }
+
+    button.green {
+      background: var(--accent2);
+      box-shadow: 0 6px 18px rgba(5,150,105,0.22);
+    }
+
+    .wide-btn { width: 100%; margin-top: 10px; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 18px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      margin: 0 0 8px;
+      font-weight: 700;
+    }
+
+    .formula {
+      background: #f3f4f6;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.93rem;
+      overflow-x: auto;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    canvas {
+      width: 100%;
+      display: block;
+      background: linear-gradient(180deg, #ffffff, #fafafa);
+      border-radius: 14px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    #sceneCanvas { height: 280px; }
+    .plotCanvas { height: 220px; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .chip {
+      background: #f9fafb;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+
+    .chip .k {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .chip .v {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 4px;
+      border-radius: 999px;
+      background: black;
+    }
+
+    .footer {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .controls { position: static; }
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Radar Echo Demo: How Convolution and Correlation Emerge</h1>
+    <div class="sub">Transmit a pulse, measure the environment response, reconstruct echoes by convolution, and then compare sent and received signals by cross-correlation to estimate alignment and lag.</div>
+
+    <div class="grid">
+      <div class="panel controls">
+        <h2 class="section-title">Radar scene</h2>
+        <div class="small">Move the target farther away and the returned echo arrives later. The sequence length is fixed at 100 so you can clearly see the lag. We treat the environment as a linear system: if we know its response <span class="mono">h[n]</span> to a unit impulse, then by superposition we can estimate its response to any transmitted signal.</div>
+
+        <div class="row"><label for="targetDelay">Target distance / echo lag</label><span id="targetDelayVal">18</span></div>
+        <input id="targetDelay" type="range" min="5" max="55" step="1" value="18" />
+
+        <div class="btns">
+          <button id="measureImpulse" class="green">Measure echo signature h[n]</button>
+          <button id="resetAnim" class="secondary">Reset animation</button>
+        </div>
+
+        <h2 class="section-title" style="margin-top:16px;">Transmitted signal</h2>
+        <div class="small">Start with a single delayed pulse, then try richer transmitted waveforms. Any discrete transmitted sequence can be written as a train of scaled and shifted unit pulses.</div>
+
+        <div class="row" style="grid-template-columns: 1fr;">
+          <label for="preset">Preset transmitted signal</label>
+        </div>
+        <select id="preset">
+          <option value="single" selected>Single delayed pulse</option>
+          <option value="scaled">Scaled pulse</option>
+          <option value="double">Two pulses</option>
+          <option value="triple">Three pulses</option>
+          <option value="burst">Burst</option>
+          <option value="chirp">Simple chirp-like sequence</option>
+          <option value="random">Random pulse train</option>
+          <option value="custom">Custom sequence</option>
+        </select>
+
+        <div class="row" style="grid-template-columns: 1fr; margin-top:10px;">
+          <label for="customSignal">Custom sequence, comma separated</label>
+        </div>
+        <textarea id="customSignal">0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0</textarea>
+
+        <div class="btns">
+          <button id="applyPreset">Load signal</button>
+          <button id="runCompare" class="green">Transmit and receive</button>
+        </div>
+        <button id="playAnimation" class="wide-btn">Play radar animation</button>
+
+        <div class="formula" id="formulaBox">Convolution goal: if we know the response h[n] to a unit impulse and assume linearity, then for u[n] = Σₖ u[k]δ[n-k] we estimate the echo by y[n] ≈ Σₖ u[k]h[n-k]. Correlation goal: measure how strongly the sent and received signals match at each lag, for example rxy[ℓ] = Σₙ x[n]u[n-ℓ].</div>
+
+        <div class="info-grid">
+          <div class="chip">
+            <div class="k">Current frame</div>
+            <div class="v" id="frameChip">0</div>
+          </div>
+          <div class="chip">
+            <div class="k">Direct echo x[n]</div>
+            <div class="v" id="directChip">0.000</div>
+          </div>
+          <div class="chip">
+            <div class="k">Convolution y[n]</div>
+            <div class="v" id="convChip">0.000</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cards">
+          <div class="panel">
+            <h3 class="card-title">1. Virtual radar scene</h3>
+            <canvas id="sceneCanvas" width="760" height="280"></canvas>
+            <div class="legend">
+              <div class="legend-item"><span class="swatch" style="background:#2563eb"></span> Radar transmitter/receiver</div>
+              <div class="legend-item"><span class="swatch" style="background:#dc2626"></span> Current transmitted sample</div>
+              <div class="legend-item"><span class="swatch" style="background:#059669"></span> Current echo sample</div>
+              <div class="legend-item"><span class="swatch" style="background:#d97706"></span> Target / reflector</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">2. Measured echo signature h[n]</h3>
+            <canvas id="impulseCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small">First click <span class="mono">Measure echo signature h[n]</span>. This sends a unit pulse <span class="mono">δ[n]</span> and records the returned echo. The central idea of convolution is then: if the system is linear, this measured unit response is enough to build the response to any input by superposition.</div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">3. Transmitted signal u[n]</h3>
+            <canvas id="inputCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small" id="inputExplain">Any discrete transmitted signal can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k]δ[n-k]</span>. Each transmitted pulse generates its own delayed and scaled copy of the measured echo signature.</div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">4. Received echo: direct simulation vs convolution</h3>
+            <canvas id="outputCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small" id="outputExplain">Blue is the directly simulated received echo. Purple is the response reconstructed from <span class="mono">h[n]</span> by superposition. Convolution answers this question: given the unit impulse response, what would the system return for an arbitrary transmitted signal?</div>
+          </div>
+
+          <div class="panel" style="grid-column: 1 / -1;">
+            <h3 class="card-title">5. Cross-correlation: matching the sent and returned pulses</h3>
+            <canvas id="corrSceneCanvas" class="plotCanvas" width="1200" height="260"></canvas>
+            <div class="small" id="corrExplain">Cross-correlation measures how strongly the sent signal and the received signal match as one is shifted relative to the other. In dot-product form, for lag <span class="mono">ℓ</span>, <span class="mono">rxy[ℓ] = Σₙ x[n]u[n-ℓ]</span>. When the shifted transmitted pulse lines up with the returned echo, the dot product becomes large. Convolution uses <span class="mono">h[n-k]</span>. Correlation uses <span class="mono">u[n-ℓ]</span>. The sign flip appears because convolution builds an output from shifted impulse responses, while correlation slides one signal against another to measure alignment.</div>
+          </div>
+        </div>
+        <div class="footer"><div style="margin-top:20px; font-size:0.95rem; line-height:1.6; color:#374151;">
+<strong>Conceptual explanation</strong><br><br>
+Imagine there is a radar and a target somewhere in the environment. The radar sends out a short pulse of energy. After travelling through the environment, part of that energy reflects from the target and returns or "filters back" to the radar as an echo. The time it takes for the echo to return determines the delay, which is related to the distance of the target.
+<br><br>
+In the demo, the radar first sends a <span class="mono">unit pulse</span> <span class="mono">u[n] = δ[n]</span>. The environment responds with a returned signal <span class="mono">h[n]</span>. This measured signal is called the <em>impulse response</em> of the environment. It tells us how the environment reacts to a single transmitted pulse.
+<br><br>
+If the radar sends the same pulse later in time, the echo is simply a delayed copy of the same response. If the transmitted pulse is scaled, the echo scales as well. These observations reflect the assumptions of a <em>linear time‑invariant system</em>.
+<br><br>
+Any transmitted discrete signal can be written as a sum of scaled and shifted impulses
+<br>
+<span class="mono">u[n] = Σₖ u[k] δ[n-k]</span>
+<br><br>
+Each of these impulses generates its own delayed copy of the impulse response. Because we assume the system is linear, the response to a sum of inputs is equal to the sum of the responses to each input separately. As a result, the total echo returned by the environment is simply the sum of all these delayed impulse responses.
+<br>
+<span class="mono">y[n] ≈ Σₖ u[k] h[n-k]</span>
+<br><br>
+This operation is called <strong>convolution</strong>. Convolution answers the question (for a linear system): <em>If we know how the environment responds to a single pulse, what signal will we receive for any transmitted waveform?</em>
+<br><br>
+The final panel illustrates <strong>cross‑correlation</strong>. Instead of predicting the returned signal, correlation measures how strongly the transmitted signal and the received signal match when one is shifted relative to the other. In dot‑product form
+<br>
+<span class="mono">r<sub>xu</sub>[ℓ] = Σₙ x[n] u[n-ℓ]</span>
+<br><br>
+When the shifted transmitted pulse aligns with the returned echo, the dot product becomes large. The location of the peak therefore reveals the delay between transmission and echo, which corresponds to the distance of the target.
+<br><br>
+In summary, convolution models how a system transforms or filters a signal using its impulse response, while correlation measures how well two signals align as one is shifted relative to the other.
+</div>
+<div class="footer">(c) Fayyaz Minhas</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const FIXED_STEPS = 100;
+    const els = {
+      targetDelay: document.getElementById('targetDelay'),
+      targetDelayVal: document.getElementById('targetDelayVal'),
+      preset: document.getElementById('preset'),
+      customSignal: document.getElementById('customSignal'),
+      formulaBox: document.getElementById('formulaBox'),
+      frameChip: document.getElementById('frameChip'),
+      directChip: document.getElementById('directChip'),
+      convChip: document.getElementById('convChip'),
+      inputExplain: document.getElementById('inputExplain'),
+      outputExplain: document.getElementById('outputExplain'),
+      corrExplain: document.getElementById('corrExplain'),
+      sceneCanvas: document.getElementById('sceneCanvas'),
+      impulseCanvas: document.getElementById('impulseCanvas'),
+      inputCanvas: document.getElementById('inputCanvas'),
+      outputCanvas: document.getElementById('outputCanvas'),
+      corrSceneCanvas: document.getElementById('corrSceneCanvas')
+    };
+
+    const state = {
+      targetDelay: 18,
+      steps: FIXED_STEPS,
+      impulse: [],
+      input: [],
+      direct: [],
+      conv: [],
+      corr: [],
+      frame: 0,
+      animId: null,
+      playing: false,
+      highlightK: 0,
+      corrLag: 0
+    };
+
+    function updateLabels() {
+      els.targetDelayVal.textContent = String(Number(els.targetDelay.value));
+      state.targetDelay = Number(els.targetDelay.value);
+    }
+
+    function buildEnvironmentImpulse(N) {
+      const h = new Array(N).fill(0);
+      const d1 = state.targetDelay;
+      const d2 = d1 + 8;
+      if (d1 < N) h[d1] += 1.0;
+      if (d2 < N) h[d2] += 0.35;
+      for (let t = d1 + 1; t < Math.min(N, d1 + 10); t++) h[t] += 0.18 * Math.pow(0.72, t - d1);
+      for (let t = d2 + 1; t < Math.min(N, d2 + 8); t++) h[t] += 0.10 * Math.pow(0.72, t - d2);
+      return h;
+    }
+
+    function simulateEcho(input) {
+      return convolve(input, buildEnvironmentImpulse(input.length));
+    }
+
+    function unitImpulse(N) {
+      const arr = new Array(N).fill(0);
+      arr[0] = 1;
+      return arr;
+    }
+
+    function convolve(u, h) {
+      const N = u.length;
+      const M = h.length;
+      const y = new Array(N).fill(0);
+      for (let n = 0; n < N; n++) {
+        let sum = 0;
+        for (let k = 0; k < N; k++) {
+          const idx = n - k;
+          if (idx >= 0 && idx < M) sum += u[k] * h[idx];
+        }
+        y[n] = sum;
+      }
+      return y;
+    }
+
+    function crossCorrelation(x, u) {
+      const N = x.length;
+      const out = new Array(2 * N - 1).fill(0);
+      for (let lag = -(N - 1); lag <= N - 1; lag++) {
+        let sum = 0;
+        for (let n = 0; n < N; n++) {
+          const j = n - lag;
+          if (j >= 0 && j < N) sum += x[n] * u[j];
+        }
+        out[lag + (N - 1)] = sum;
+      }
+      return out;
+    }
+
+    function presetSignal(name, N) {
+      const u = new Array(N).fill(0);
+      if (name === 'single') {
+        u[5] = 1;
+      } else if (name === 'scaled') {
+        u[8] = 0.6;
+      } else if (name === 'double') {
+        u[4] = 1;
+        u[15] = 0.8;
+      } else if (name === 'triple') {
+        u[4] = 1;
+        u[11] = 0.6;
+        u[19] = 0.9;
+      } else if (name === 'burst') {
+        for (let i = 5; i < 14; i++) u[i] = (i % 2 === 0 ? 0.9 : 0.45);
+      } else if (name === 'chirp') {
+        for (let i = 4; i < 26; i++) u[i] = Math.sin(0.12 * (i - 4) * (i - 4));
+      } else if (name === 'random') {
+        for (let i = 0; i < N; i++) if (Math.random() > 0.85) u[i] = +(Math.random() * 1.2 - 0.2).toFixed(2);
+      }
+      return u;
+    }
+
+    function toText(arr) {
+      return arr.map(v => Number(v.toFixed(2))).join(', ');
+    }
+
+    function parseCustom(text, N) {
+      const vals = text.split(',').map(s => Number(s.trim())).filter(v => !Number.isNaN(v));
+      const out = new Array(N).fill(0);
+      for (let i = 0; i < Math.min(N, vals.length); i++) out[i] = vals[i];
+      return out;
+    }
+
+    function findNonZeroIndices(arr) {
+      const idx = [];
+      arr.forEach((v, i) => { if (Math.abs(v) > 1e-9) idx.push(i); });
+      return idx;
+    }
+
+    function argMaxAbs(arr) {
+      let idx = 0;
+      let best = -Infinity;
+      arr.forEach((v, i) => {
+        const a = Math.abs(v);
+        if (a > best) { best = a; idx = i; }
+      });
+      return idx;
+    }
+
+    function updateTextPanels() {
+      const idx = findNonZeroIndices(state.input);
+      if (idx.length === 1) {
+        const k0 = idx[0];
+        const amp = Number(state.input[k0].toFixed(2));
+        if (Math.abs(amp - 1) < 1e-9) {
+          els.inputExplain.innerHTML = `Any discrete transmitted signal can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k]δ[n-k]</span>. Here there is only one non-zero sample, so the transmitted signal is exactly <span class="mono">u[n] = δ[n-${k0}]</span>.`;
+          els.outputExplain.innerHTML = `Blue is the directly simulated returned echo. Purple is the reconstruction from <span class="mono">h[n]</span>. Since the transmitted signal is <span class="mono">u[n] = δ[n-${k0}]</span>, superposition and shift invariance give <span class="mono">y[n] ≈ h[n-${k0}]</span>.`;
+          els.formulaBox.textContent = `Convolution goal: given h[n], estimate the response to any input by superposition. Here u[n] = δ[n-${k0}], so y[n] ≈ h[n-${k0}]. Correlation goal: estimate how strongly the sent and received signals match at each lag, using rxy[ℓ] = Σₙ x[n]u[n-ℓ].`;
+        } else {
+          els.inputExplain.innerHTML = `Any discrete transmitted signal can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k]δ[n-k]</span>. Here the transmitted signal is <span class="mono">u[n] = ${amp}δ[n-${k0}]</span>, a scaled and delayed pulse.`;
+          els.outputExplain.innerHTML = `Blue is the directly simulated returned echo. Purple is the reconstruction from <span class="mono">h[n]</span>. Since the transmitted signal is <span class="mono">${amp}δ[n-${k0}]</span>, linearity gives <span class="mono">y[n] ≈ ${amp}h[n-${k0}]</span>.`;
+          els.formulaBox.textContent = `Convolution goal: use h[n] and superposition to predict outputs. Here u[n] = ${amp}δ[n-${k0}], so y[n] ≈ ${amp}h[n-${k0}]. Correlation goal: compute rxy[ℓ] = Σₙ x[n]u[n-ℓ] to see where sent and returned signals align best.`;
+        }
+      } else {
+        const terms = idx.slice(0, 6).map(k => `${Number(state.input[k].toFixed(2))}δ[n-${k}]`);
+        const suffix = idx.length > 6 ? ' + ...' : '';
+        const expansion = terms.length ? terms.join(' + ') + suffix : '0';
+        els.inputExplain.innerHTML = `Any discrete transmitted signal can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k]δ[n-k]</span>. For the current waveform this begins as <span class="mono">u[n] = ${expansion}</span>.`;
+        els.outputExplain.innerHTML = `Blue is the directly simulated returned echo. Purple is the response reconstructed from <span class="mono">h[n]</span>. By superposition, each term <span class="mono">u[k]δ[n-k]</span> contributes <span class="mono">u[k]h[n-k]</span>, so <span class="mono">y[n] ≈ Σₖ u[k]h[n-k]</span>.`;
+        els.formulaBox.textContent = `Convolution goal: predict the response to the current input u[n] = ${expansion} by y[n] ≈ Σₖ u[k]h[n-k]. Correlation goal: measure matching across lags by rxy[ℓ] = Σₙ x[n]u[n-ℓ].`;
+      }
+
+      if (state.corr.length) {
+        const peak = argMaxAbs(state.corr);
+        const lag = peak - (state.input.length - 1);
+        state.corrLag = lag;
+        els.corrExplain.innerHTML = `Cross-correlation measures how strongly the sent signal and the received signal match as one is shifted relative to the other. In dot-product form, for lag <span class="mono">ℓ</span>, <span class="mono">rxy[ℓ] = Σₙ x[n]u[n-ℓ]</span>. The strongest peak is currently at lag <span class="mono">${lag}</span>. When the shifted sent pulse lines up with the returned echo, the dot product becomes large. Convolution uses <span class="mono">h[n-k]</span> to build an output from impulse responses. Correlation uses <span class="mono">u[n-ℓ]</span> to measure alignment. The sign difference comes from construction versus matching.`;
+      }
+    }
+
+    function loadPreset() {
+      const N = state.steps;
+      let u;
+      if (els.preset.value === 'custom') u = parseCustom(els.customSignal.value, N);
+      else u = presetSignal(els.preset.value, N);
+      state.input = u;
+      els.customSignal.value = toText(u);
+      state.highlightK = findNonZeroIndices(u)[0] ?? 0;
+      updateTextPanels();
+      drawAll();
+    }
+
+    function measureImpulse() {
+      state.impulse = simulateEcho(unitImpulse(state.steps));
+      updateTextPanels();
+      drawAll();
+    }
+
+    function compare() {
+      if (!state.impulse.length) return;
+      state.direct = simulateEcho(state.input);
+      state.conv = convolve(state.input, state.impulse);
+      state.corr = crossCorrelation(state.direct, state.input);
+      updateTextPanels();
+      drawAll();
+    }
+
+    function resetAnimation() {
+      stopAnimation();
+      state.frame = 0;
+      state.highlightK = findNonZeroIndices(state.input)[0] ?? 0;
+      updateReadout();
+      drawAll();
+    }
+
+    function stopAnimation() {
+      if (state.animId) cancelAnimationFrame(state.animId);
+      state.animId = null;
+      state.playing = false;
+    }
+
+    function playAnimation() {
+      stopAnimation();
+      state.playing = true;
+      function step() {
+        state.frame += 1;
+        if (state.frame >= state.steps) state.frame = 0;
+        const nz = findNonZeroIndices(state.input);
+        if (nz.length) state.highlightK = nz[state.frame % nz.length];
+        updateReadout();
+        drawAll();
+        state.animId = requestAnimationFrame(step);
+      }
+      step();
+    }
+
+    function updateReadout() {
+      const n = Math.min(state.frame, state.steps - 1);
+      els.frameChip.textContent = String(n);
+      els.directChip.textContent = state.direct.length ? state.direct[n].toFixed(3) : '0.000';
+      els.convChip.textContent = state.conv.length ? state.conv[n].toFixed(3) : '0.000';
+    }
+
+    function getCtx(canvas) { return canvas.getContext('2d'); }
+    function clear(ctx, canvas) { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+    function drawAxes(ctx, w, h, margin, xLabel, yLabel) {
+      ctx.save();
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, h - margin.bottom);
+      ctx.lineTo(w - margin.right, h - margin.bottom);
+      ctx.moveTo(margin.left, margin.top);
+      ctx.lineTo(margin.left, h - margin.bottom);
+      ctx.stroke();
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.fillText(xLabel, w - margin.right - 8, h - 8);
+      ctx.save();
+      ctx.translate(14, margin.top + 8);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+      ctx.restore();
+    }
+
+    function drawStemPlot(canvas, data, options = {}) {
+      const ctx = getCtx(canvas);
+      clear(ctx, canvas);
+      const w = canvas.width, h = canvas.height;
+      const margin = { left: 45, right: 18, top: 16, bottom: 28 };
+      drawAxes(ctx, w, h, margin, options.xLabel || 'n', options.yLabel || 'value');
+      const N = Math.max(1, data.length);
+      const extra = (options.extraData || []).flat().filter(v => Number.isFinite(v));
+      const all = data.concat(extra);
+      const maxAbs = Math.max(1e-6, ...all.map(v => Math.abs(v)), 1);
+      const y0 = h - margin.bottom - ((0 - (-maxAbs)) / (2 * maxAbs)) * (h - margin.top - margin.bottom);
+
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y0);
+      ctx.lineTo(w - margin.right, y0);
+      ctx.stroke();
+
+      const xMap = n => margin.left + n * (w - margin.left - margin.right) / Math.max(1, N - 1);
+      const yMap = v => h - margin.bottom - ((v + maxAbs) / (2 * maxAbs)) * (h - margin.top - margin.bottom);
+
+      if (options.lineData) {
+        ctx.strokeStyle = options.lineColor || '#7c3aed';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        options.lineData.forEach((v, i) => {
+          const x = xMap(i), y = yMap(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = options.color || '#2563eb';
+      ctx.fillStyle = options.color || '#2563eb';
+      ctx.lineWidth = 1.5;
+      data.forEach((v, i) => {
+        const x = xMap(i), y = yMap(v);
+        ctx.beginPath();
+        ctx.moveTo(x, y0);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (Number.isInteger(options.highlight) && options.highlight >= 0 && options.highlight < data.length) {
+        const i = options.highlight;
+        const x = xMap(i), y = yMap(data[i]);
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, margin.top);
+        ctx.lineTo(x, h - margin.bottom);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      if (typeof r === 'number') r = { tl: r, tr: r, br: r, bl: r };
+      ctx.beginPath();
+      ctx.moveTo(x + r.tl, y);
+      ctx.lineTo(x + w - r.tr, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r.tr);
+      ctx.lineTo(x + w, y + h - r.br);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h);
+      ctx.lineTo(x + r.bl, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r.bl);
+      ctx.lineTo(x, y + r.tl);
+      ctx.quadraticCurveTo(x, y, x + r.tl, y);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    function drawScene() {
+      const canvas = els.sceneCanvas;
+      const ctx = getCtx(canvas);
+      clear(ctx, canvas);
+      const w = canvas.width, h = canvas.height;
+      const n = Math.min(state.frame, state.steps - 1);
+      const tx = 110, ty = 145;
+      const targetX = 220 + (state.targetDelay / 55) * 430;
+      const targetY = 138;
+      const u = state.input.length ? state.input[n] : 0;
+      const y = state.direct.length ? state.direct[n] : 0;
+
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#d1d5db';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(30, 215);
+      ctx.lineTo(w - 20, 215);
+      ctx.stroke();
+
+      ctx.fillStyle = '#2563eb';
+      roundRect(ctx, tx - 45, ty - 35, 90, 70, 16, true, false);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(tx - 8, ty - 20, 16, 40);
+      ctx.fillStyle = '#111827';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText('radar', tx - 17, ty + 55);
+
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.arc(targetX, targetY, 24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#111827';
+      ctx.fillText('target', targetX - 18, targetY + 45);
+
+      ctx.strokeStyle = 'rgba(37,99,235,0.4)';
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(tx + 40, ty);
+      ctx.lineTo(targetX - 24, targetY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const sendProgress = Math.max(0, Math.min(1, (n + 1) / Math.max(1, state.targetDelay)));
+      const echoStart = state.targetDelay;
+      const echoProgress = n < echoStart ? 0 : Math.max(0, Math.min(1, (n - echoStart + 1) / Math.max(1, state.targetDelay)));
+
+      if (Math.abs(u) > 1e-9) {
+        const pulseX = tx + 40 + sendProgress * (targetX - tx - 64);
+        ctx.fillStyle = '#dc2626';
+        ctx.beginPath();
+        ctx.arc(pulseX, ty, 8 + 5 * Math.abs(u), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (Math.abs(y) > 1e-9) {
+        const echoX = targetX - 24 - echoProgress * (targetX - tx - 64);
+        ctx.fillStyle = '#059669';
+        ctx.beginPath();
+        ctx.arc(echoX, ty - 16, 8 + 5 * Math.abs(y), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText(`n = ${n}`, 20, 24);
+      ctx.fillText(`u[n] = ${u.toFixed(2)}`, 20, 44);
+      ctx.fillStyle = '#059669';
+      ctx.fillText(`echo[n] = ${y.toFixed(3)}`, 20, 64);
+      ctx.fillStyle = '#111827';
+      ctx.fillText(`echo lag = ${state.targetDelay}`, 20, 84);
+    }
+
+    function drawCorrelationScene() {
+      const canvas = els.corrSceneCanvas;
+      const ctx = getCtx(canvas);
+      clear(ctx, canvas);
+      const w = canvas.width, h = canvas.height;
+      const margin = { left: 55, right: 18, top: 22, bottom: 26 };
+      const upperH = 120;
+      const lowerTop = 150;
+
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, w, h);
+
+      const tx = state.input.length ? state.input : new Array(state.steps).fill(0);
+      const rx = state.direct.length ? state.direct : new Array(state.steps).fill(0);
+      const corr = state.corr.length ? state.corr : new Array(2 * state.steps - 1).fill(0);
+      const lag = state.corrLag;
+      const N = tx.length;
+      const corrPeak = state.corr.length ? argMaxAbs(state.corr) : 0;
+
+      const xMapTop = i => margin.left + i * (w - margin.left - margin.right) / Math.max(1, N - 1);
+      const maxAbsTop = Math.max(1, ...tx.map(v => Math.abs(v)), ...rx.map(v => Math.abs(v)));
+      const yMapTop = (v, baseline) => baseline - v * 38 / maxAbsTop;
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '13px Inter, sans-serif';
+      ctx.fillText('Sent pulse u[n]', margin.left, 18);
+      ctx.fillText('Returned pulse x[n]', margin.left, 70);
+
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.moveTo(margin.left, 34);
+      ctx.lineTo(w - margin.right, 34);
+      ctx.moveTo(margin.left, 86);
+      ctx.lineTo(w - margin.right, 86);
+      ctx.stroke();
+
+      // zero marker on top
+      ctx.strokeStyle = '#9ca3af';
+      ctx.setLineDash([5,5]);
+      ctx.beginPath();
+      ctx.moveTo(xMapTop(0), 8);
+      ctx.lineTo(xMapTop(0), 115);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#6b7280';
+      ctx.fillText('time zero', xMapTop(0) + 6, 16);
+
+      // sent signal
+      ctx.strokeStyle = '#dc2626';
+      ctx.fillStyle = '#dc2626';
+      tx.forEach((v, i) => {
+        const x = xMapTop(i), y = yMapTop(v, 34);
+        ctx.beginPath(); ctx.moveTo(x, 34); ctx.lineTo(x, y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
+      });
+
+      // returned signal with lag
+      ctx.strokeStyle = '#059669';
+      ctx.fillStyle = '#059669';
+      rx.forEach((v, i) => {
+        const x = xMapTop(i), y = yMapTop(v, 86);
+        ctx.beginPath(); ctx.moveTo(x, 86); ctx.lineTo(x, y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
+      });
+
+      // highlight best lag shift visually by shifting sent pulse under returned
+      const shiftBaseline = 138;
+      ctx.fillStyle = '#111827';
+      ctx.fillText(`Shifted sent pulse for lag ℓ = ${lag}`, margin.left, 122);
+      ctx.strokeStyle = '#7c3aed';
+      ctx.fillStyle = '#7c3aed';
+      tx.forEach((v, i) => {
+        const shiftedIndex = i + lag;
+        if (shiftedIndex < 0 || shiftedIndex >= N) return;
+        const x = xMapTop(shiftedIndex), y = yMapTop(v, shiftBaseline);
+        ctx.beginPath(); ctx.moveTo(x, shiftBaseline); ctx.lineTo(x, y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+      });
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.moveTo(margin.left, shiftBaseline);
+      ctx.lineTo(w - margin.right, shiftBaseline);
+      ctx.stroke();
+
+      // correlation output bottom
+      const corrMargin = { left: 55, right: 18, top: lowerTop, bottom: 18 };
+      const corrBase = h - 26;
+      drawAxes(ctx, w, h, corrMargin, 'lag ℓ', 'rxy');
+      const maxAbsCorr = Math.max(1e-6, ...corr.map(v => Math.abs(v)), 1);
+      const xMapCorr = i => corrMargin.left + i * (w - corrMargin.left - corrMargin.right) / Math.max(1, corr.length - 1);
+      const yMapCorr = v => corrBase - ((v + maxAbsCorr) / (2 * maxAbsCorr)) * (corrBase - lowerTop - 10);
+      const y0 = yMapCorr(0);
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath(); ctx.moveTo(corrMargin.left, y0); ctx.lineTo(w - corrMargin.right, y0); ctx.stroke();
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 2.3;
+      ctx.beginPath();
+      corr.forEach((v, i) => {
+        const x = xMapCorr(i), y = yMapCorr(v);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      const px = xMapCorr(corrPeak), py = yMapCorr(corr[corrPeak]);
+      ctx.strokeStyle = '#dc2626';
+      ctx.beginPath(); ctx.moveTo(px, lowerTop); ctx.lineTo(px, corrBase); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#111827';
+      ctx.fillText(`peak lag = ${lag}`, px + 8, lowerTop + 14);
+    }
+
+    function drawAll() {
+      drawScene();
+      drawStemPlot(els.impulseCanvas, state.impulse.length ? state.impulse : new Array(state.steps).fill(0), {
+        color: '#059669', highlight: state.frame, yLabel: 'h[n]'
+      });
+      drawStemPlot(els.inputCanvas, state.input.length ? state.input : new Array(state.steps).fill(0), {
+        color: '#dc2626', highlight: state.highlightK, yLabel: 'u[n]'
+      });
+      drawStemPlot(els.outputCanvas, state.direct.length ? state.direct : new Array(state.steps).fill(0), {
+        color: '#2563eb', lineData: state.conv.length ? state.conv : undefined, lineColor: '#7c3aed', highlight: state.frame, extraData: [state.conv], yLabel: 'echo[n]'
+      });
+      drawCorrelationScene();
+      updateReadout();
+    }
+
+    function attachEvents() {
+      els.targetDelay.addEventListener('input', () => {
+        updateLabels();
+        state.impulse = [];
+        state.direct = [];
+        state.conv = [];
+        state.corr = [];
+        drawAll();
+      });
+
+      document.getElementById('measureImpulse').addEventListener('click', measureImpulse);
+      document.getElementById('applyPreset').addEventListener('click', () => { loadPreset(); drawAll(); });
+      document.getElementById('runCompare').addEventListener('click', compare);
+      document.getElementById('playAnimation').addEventListener('click', playAnimation);
+      document.getElementById('resetAnim').addEventListener('click', resetAnimation);
+      els.preset.addEventListener('change', loadPreset);
+    }
+
+    function init() {
+      updateLabels();
+      attachEvents();
+      state.input = presetSignal('single', state.steps);
+      els.preset.value = 'single';
+      els.customSignal.value = toText(state.input);
+      state.highlightK = 5;
+      updateTextPanels();
+      drawAll();
+    }
+
+    init();
+  </script>
+</body>
+</html>
