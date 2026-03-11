@@ -104,6 +104,7 @@ This file lists each top-level file in the repository with a short description o
 - `pytorch_conv.py`: Script / demo creating convolution examples in PyTorch (Filter module and demos for learned kernels).
 - `pytorch_mlp_mnist.ipynb`: Notebook training an MLP on MNIST using PyTorch.
 - `pytorch_nn_barebones.ipynb`: Barebones PyTorch neural network examples.
+- `radar.html`: Demo explaining how convolution and correlation emerge (for use with convolutional neural networks)
 - `regper.ipynb`: Notebook on regularised perceptron.
 - `regression.html`: HTML notes about regression methods.
 - `regression.ipynb`: Notebook with regression examples and diagnostics with sk-learn.
