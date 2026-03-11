@@ -1,206 +1,668 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Interactive Point Transformation</title>
-  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <meta charset="UTF-8" />
+  <title>Interactive Attention as Springs</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <style>
-    .plot {
-      margin: 20px;
-      display: inline-block;
+    :root {
+      --bg: #f8f9fc;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #2563eb;
+      --accent2: #16a34a;
+      --accent3: #dc2626;
+      --accent4: #f59e0b;
+      --selfspring: #7c3aed;
+      --shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      --radius: 16px;
     }
-    svg {
-      border: 1px solid black;
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
     }
-    .slider-container {
+
+    .container {
+      max-width: 1450px;
+      margin: 0 auto;
+    }
+
+    .intro {
+      background: var(--panel);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 24px;
       margin-bottom: 20px;
+    }
+
+    .intro p {
+      margin: 0 0 10px 0;
+      line-height: 1.55;
+    }
+
+    .equation-block {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: #f8fbff;
+      border-radius: 10px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .controls button {
+      border: none;
+      background: var(--accent);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .controls button:hover {
+      opacity: 0.92;
+    }
+
+    .fixed-lambda {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-weight: 600;
+    }
+
+    .credit {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .plots {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .plot-card {
+      background: var(--panel);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .plot-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .plot-subtitle {
+      font-size: 0.92rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+      line-height: 1.45;
+      min-height: 44px;
+    }
+
+    svg {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      display: block;
+    }
+
+    .axis path,
+    .axis line {
+      stroke: #9ca3af;
+      stroke-width: 1;
+    }
+
+    .axis text {
+      fill: #4b5563;
+      font-size: 11px;
+    }
+
+    .grid line {
+      stroke: #e5e7eb;
+      stroke-width: 1;
+    }
+
+    .grid path {
+      display: none;
+    }
+
+    .weight-table {
+      margin-top: 14px;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .weight-table th,
+    .weight-table td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 6px 8px;
+      text-align: left;
+    }
+
+    .weight-table th {
+      background: #f9fafb;
+    }
+
+    .note {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    code {
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 6px;
+      font-size: 0.95em;
+    }
+
+    @media (max-width: 1100px) {
+      .plots {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
-  <div>
-    <p>This demo shows how the representation of a query token changes in a transformer based on its relation to other tokens and the specified transformation \( v(x) \).</p>
-    <p>Equation for \( x_q \):</p>
-    <p>\[ x_q' = \sum_{x_k \in M(x_q, S_{x_k})} a(x_q, x_k; \theta_a) v(x_k; \theta_v) \]</p>
-    <div class="slider-container">
-      <label for="lambda-slider">Lambda: </label>
-      <input type="range" id="lambda-slider" min="0.001" max="3.0" step="0.001" value="1.0">
-      <span id="lambda-value">1.0</span>
-    </div>
-  </div>
-  <div>
-    <p>(c) Fayyaz Minhas</p>
-  </div>
-  <div>
-    <div id="plot1" class="plot">
-      <p>Tokens in original feature space</p>
-    </div>
-    <div id="plot2" class="plot">
-      <p>Tokens in \( v(x) \)</p>
-    </div>
-    <div id="plot3" class="plot">
-      <p>Representation of the query token (red) after transformation</p>
-    </div>
-  </div>
-  
-  <script>
-    // Generate normally distributed points
-    const N = 5;
-    const points = d3.range(N).map(() => [d3.randomNormal()(), d3.randomNormal()()]);
-    
-    // Initial value of lambda
-    let lambda = 1.0;
+  <div class="container">
+    <div class="intro">
+      <p>
+        This demo shows how the representation of a query token changes in an attention mechanism based on its relation to other tokens and the specified value transformation \(v(x)\).
+      </p>
 
-    // Define kernel and v(x)
-    const kernel = (a, b) => Math.exp(-lambda * (Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2)));
+      <div class="equation-block">
+        <p>
+          Main update equation (how the representation of a given input token is transformed):
+        </p>
+        <p>
+          \[
+          x_q' = \sum_{x_k \in M(x_q, S_{x_k})} a(x_q, x_k; \theta_a)\, v(x_k; \theta_v)
+          \]
+        </p>
+        
+        <p>
+          Here, \(S_{x_k}\) is the set of all key tokens, that is, all tokens forming the input. \(M(x_q, S_{x_k})\) is the masking or neighbourhood set for a given query token \(x_q\), meaning the subset of tokens it is allowed to attend to. The function \(a(x_q, x_k; \theta_a)\) is the affinity function that produces a similarity degree between the query token \(x_q\) and key token \(x_k\), and it is learnable with parameters \(\theta_a\). The function \(v(x_k; \theta_v)\) maps token \(x_k\) into the transformed value space and is also learnable, with parameters \(\theta_v\). The updated query representation \(x_q'\) is therefore a weighted average of transformed value vectors where weights are based on affinity or attention values between tokens.
+        </p>
+      </div>
+
+      <div class="controls">
+        <button id="reset-btn">Random Reset</button>
+      </div>
+
+      <div class="credit">(c) Fayyaz Minhas</div>
+    </div>
+
+    <div class="plots">
+      <div class="plot-card">
+        <div class="plot-title">1. Tokens in original feature space</div>
+        <div class="plot-subtitle">
+          Click anywhere in this panel to place the query token \(x_q\). Black links show the attention strengths to the other tokens.
+        </div>
+        <div id="plot1"></div>
+      </div>
+
+      <div class="plot-card">
+        <div class="plot-title">2. Tokens in the transformed (value) space</div>
+        <div class="plot-subtitle">
+          This panel shows where the tokens move after applying the value transformation \(v(x)\).
+        </div>
+        <div id="plot2"></div>
+      </div>
+
+      <div class="plot-card">
+        <div class="plot-title">3. Attention as springs in value space</div>
+        <div class="plot-subtitle">
+          Each transformed token \(v(x_k)\) acts like an anchor. Stronger attention produces a thicker spring. The self spring is shown separately in purple.
+        </div>
+        <div id="plot3"></div>
+        <div id="weights-panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const N = 6;
+    const width = 420;
+    const height = 420;
+    const margin = 42;
+
+    const lambda = 0.1;
+
+    let points = [];
+    let lastClick = [width / 2, height / 2];
+    let hasPlacedQuery = false;
+
+    const xScale = d3.scaleLinear().domain([-3.2, 3.2]).range([margin, width - margin]);
+    const yScale = d3.scaleLinear().domain([-3.2, 3.2]).range([height - margin, margin]);
+
+    function generatePoints() {
+      return d3.range(N).map(() => [
+        d3.randomNormal(0, 1.0)(),
+        d3.randomNormal(0, 1.0)()
+      ]);
+    }
+
+    const kernel = (a, b) => {
+      const dx = a[0] - b[0];
+      const dy = a[1] - b[1];
+      return Math.exp(-lambda * (dx * dx + dy * dy));
+    };
+
     const v = (x) => [-x[0], -x[1]];
 
-    // SVG dimensions
-    const width = 400, height = 400, margin = 40;
+    function makeSVG(containerId) {
+      const svg = d3.select(containerId)
+        .append("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`);
 
-    // Scale functions
-    const xScale = d3.scaleLinear().domain([-3, 3]).range([margin, width - margin]);
-    const yScale = d3.scaleLinear().domain([-3, 3]).range([height - margin, margin]);
+      svg.append("g")
+        .attr("class", "grid x-grid")
+        .attr("transform", `translate(0,${height - margin})`);
 
-    // Create SVG containers
-    const svg1 = d3.select("#plot1").append("svg").attr("width", width).attr("height", height);
-    const svg2 = d3.select("#plot2").append("svg").attr("width", width).attr("height", height);
-    const svg3 = d3.select("#plot3").append("svg").attr("width", width).attr("height", height);
+      svg.append("g")
+        .attr("class", "grid y-grid")
+        .attr("transform", `translate(${margin},0)`);
 
-    // Draw points and labels in Plot-1
-    svg1.selectAll("circle")
-      .data(points)
-      .enter()
-      .append("circle")
-      .attr("cx", d => xScale(d[0]))
-      .attr("cy", d => yScale(d[1]))
-      .attr("r", 5)
-      .attr("fill", "blue");
-    
-    svg1.selectAll("text")
-      .data(points)
-      .enter()
-      .append("text")
-      .attr("x", d => xScale(d[0]) + 7)
-      .attr("y", d => yScale(d[1]) - 7)
-      .text((d, i) => `x_${i + 1}`);
+      svg.append("g")
+        .attr("class", "axis x-axis")
+        .attr("transform", `translate(0,${height - margin})`);
 
-    // Draw transformed points and labels in Plot-2
-    svg2.selectAll("circle")
-      .data(points)
-      .enter()
-      .append("circle")
-      .attr("cx", d => xScale(v(d)[0]))
-      .attr("cy", d => yScale(v(d)[1]))
-      .attr("r", 5)
-      .attr("fill", "green");
+      svg.append("g")
+        .attr("class", "axis y-axis")
+        .attr("transform", `translate(${margin},0)`);
 
-    svg2.selectAll("text")
-      .data(points)
-      .enter()
-      .append("text")
-      .attr("x", d => xScale(v(d)[0]) + 7)
-      .attr("y", d => yScale(v(d)[1]) - 7)
-      .text((d, i) => `v(x_${i + 1})`);
+      svg.append("line")
+        .attr("x1", xScale(0))
+        .attr("x2", xScale(0))
+        .attr("y1", margin)
+        .attr("y2", height - margin)
+        .attr("stroke", "#cbd5e1")
+        .attr("stroke-dasharray", "4,4");
 
-    // Function to update plots when lambda changes
-    function updatePlots() {
-      const [mx, my] = lastClick;
-      const x_q = [xScale.invert(mx), yScale.invert(my)];
+      svg.append("line")
+        .attr("x1", margin)
+        .attr("x2", width - margin)
+        .attr("y1", yScale(0))
+        .attr("y2", yScale(0))
+        .attr("stroke", "#cbd5e1")
+        .attr("stroke-dasharray", "4,4");
 
-      // Compute a(x_q, x_k)
-      const S_xk = [...points, x_q];
-      const k_qk = S_xk.map(xk => kernel(x_q, xk));
-      const sum_k_qk = k_qk.reduce((sum, k_val) => sum + k_val, 0);
-      const a_qk = k_qk.map(k_val => k_val / sum_k_qk);
+      return svg;
+    }
 
-      // Remove any existing user-defined points and lines
-      svg1.selectAll(".user-point").remove();
-      svg1.selectAll(".user-line").remove();
-      svg2.selectAll(".user-point").remove();
+    const svg1 = makeSVG("#plot1");
+    const svg2 = makeSVG("#plot2");
+    const svg3 = makeSVG("#plot3");
 
-      // Add the new point to Plot-1
-      svg1.append("circle")
-        .attr("class", "user-point")
-        .attr("cx", mx)
-        .attr("cy", my)
-        .attr("r", 5)
-        .attr("fill", "red");
+    function drawAxes(svg) {
+      svg.select(".x-axis").call(d3.axisBottom(xScale).ticks(6));
+      svg.select(".y-axis").call(d3.axisLeft(yScale).ticks(6));
 
-      // Draw lines from x_q to all points in Plot-1
-      svg1.selectAll(".user-line")
-        .data(points)
-        .enter()
-        .append("line")
-        .attr("class", "user-line")
-        .attr("x1", mx)
-        .attr("y1", my)
-        .attr("x2", d => xScale(d[0]))
-        .attr("y2", d => yScale(d[1]))
-        .attr("stroke", "black")
-        .attr("stroke-width", (d, i) => 5 * a_qk[i]);
+      svg.select(".x-grid")
+        .call(d3.axisBottom(xScale).ticks(6).tickSize(-(height - 2 * margin)).tickFormat(""));
 
-      // Show v(x_q) in Plot-2
-      svg2.append("circle")
-        .attr("class", "user-point")
-        .attr("cx", xScale(v(x_q)[0]))
-        .attr("cy", yScale(v(x_q)[1]))
-        .attr("r", 5)
-        .attr("fill", "red");
+      svg.select(".y-grid")
+        .call(d3.axisLeft(yScale).ticks(6).tickSize(-(width - 2 * margin)).tickFormat(""));
+    }
 
-      svg2.append("text")
-        .attr("class", "user-point")
-        .attr("x", xScale(v(x_q)[0]) + 7)
-        .attr("y", yScale(v(x_q)[1]) - 7)
-        .text("v(x_q)");
+    drawAxes(svg1);
+    drawAxes(svg2);
+    drawAxes(svg3);
 
-      // Compute x_q' based on the provided transformation, including x_q itself in the set of points
-      const weights = a_qk;
-      const x_q_prime = S_xk.reduce((sum, xk, i) => {
-        const transformed = v(xk);
-        return [sum[0] + weights[i] * transformed[0], sum[1] + weights[i] * transformed[1]];
-      }, [0, 0]);
+    function springPath(x1, y1, x2, y2, coils = 9, amplitude = 8) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const L = Math.sqrt(dx * dx + dy * dy);
 
-      // Clear and draw transformed points in Plot-3
-      svg3.selectAll("*").remove();
-      svg3.selectAll("circle")
+      if (L < 1) {
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      }
+
+      const ux = dx / L;
+      const uy = dy / L;
+      const px = -uy;
+      const py = ux;
+
+      const startPad = 12;
+      const endPad = 12;
+
+      const sx = x1 + ux * startPad;
+      const sy = y1 + uy * startPad;
+      const ex = x2 - ux * endPad;
+      const ey = y2 - uy * endPad;
+
+      const usableDx = ex - sx;
+      const usableDy = ey - sy;
+      const usableL = Math.sqrt(usableDx * usableDx + usableDy * usableDy);
+
+      if (usableL < 8) {
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      }
+
+      const pts = [];
+      const steps = coils * 10;
+
+      pts.push([x1, y1]);
+      pts.push([sx, sy]);
+
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const bx = sx + t * usableDx;
+        const by = sy + t * usableDy;
+        const wave = Math.sin(t * coils * 2 * Math.PI) * amplitude;
+        pts.push([bx + px * wave, by + py * wave]);
+      }
+
+      pts.push([x2, y2]);
+      return d3.line()(pts);
+    }
+
+    function drawStaticPanels() {
+      svg1.selectAll(".base-point").remove();
+      svg1.selectAll(".base-label").remove();
+
+      svg1.selectAll(".base-point")
         .data(points)
         .enter()
         .append("circle")
+        .attr("class", "base-point")
+        .attr("cx", d => xScale(d[0]))
+        .attr("cy", d => yScale(d[1]))
+        .attr("r", 5)
+        .attr("fill", "#2563eb");
+
+      svg1.selectAll(".base-label")
+        .data(points)
+        .enter()
+        .append("text")
+        .attr("class", "base-label")
+        .attr("x", d => xScale(d[0]) + 8)
+        .attr("y", d => yScale(d[1]) - 8)
+        .attr("font-size", 12)
+        .text((d, i) => `x${i + 1}`);
+
+      svg2.selectAll(".base-point").remove();
+      svg2.selectAll(".base-label").remove();
+
+      svg2.selectAll(".base-point")
+        .data(points)
+        .enter()
+        .append("circle")
+        .attr("class", "base-point")
         .attr("cx", d => xScale(v(d)[0]))
         .attr("cy", d => yScale(v(d)[1]))
         .attr("r", 5)
-        .attr("fill", "green");
+        .attr("fill", "#16a34a");
 
-      // Add x_q' to Plot-3
-      svg3.append("circle")
-        .attr("cx", xScale(x_q_prime[0]))
-        .attr("cy", yScale(x_q_prime[1]))
-        .attr("r", 5)
-        .attr("fill", "red");
-      
-      svg3.append("text")
-        .attr("x", xScale(x_q_prime[0]) + 7)
-        .attr("y", yScale(x_q_prime[1]) - 7)
-        .text("x_q'");
+      svg2.selectAll(".base-label")
+        .data(points)
+        .enter()
+        .append("text")
+        .attr("class", "base-label")
+        .attr("x", d => xScale(v(d)[0]) + 8)
+        .attr("y", d => yScale(v(d)[1]) - 8)
+        .attr("font-size", 12)
+        .text((d, i) => `v(x${i + 1})`);
     }
 
-    // Initialize lastClick to handle updates
-    let lastClick = [0, 0];
+    function updatePlots() {
+      if (!hasPlacedQuery) return;
 
-    // Add x_q interactively in Plot-1
+      const [mx, my] = lastClick;
+      const x_q = [xScale.invert(mx), yScale.invert(my)];
+      const S_xk = [...points, x_q];
+
+      const rawScores = S_xk.map(xk => kernel(x_q, xk));
+      const scoreSum = d3.sum(rawScores);
+      const a_qk = rawScores.map(s => s / scoreSum);
+
+      const x_q_prime = S_xk.reduce((acc, xk, i) => {
+        const tx = v(xk);
+        return [
+          acc[0] + a_qk[i] * tx[0],
+          acc[1] + a_qk[i] * tx[1]
+        ];
+      }, [0, 0]);
+
+      const v_xq = v(x_q);
+      const maxOtherWeight = d3.max(a_qk.slice(0, points.length));
+
+      svg1.selectAll(".dynamic").remove();
+      svg2.selectAll(".dynamic").remove();
+      svg3.selectAll(".dynamic").remove();
+
+      svg1.selectAll(".attn-line")
+        .data(points.map((p, i) => ({ p, w: a_qk[i] })))
+        .enter()
+        .append("line")
+        .attr("class", "dynamic attn-line")
+        .attr("x1", mx)
+        .attr("y1", my)
+        .attr("x2", d => xScale(d.p[0]))
+        .attr("y2", d => yScale(d.p[1]))
+        .attr("stroke", "#111827")
+        .attr("stroke-opacity", d => 0.25 + 0.75 * (d.w / maxOtherWeight))
+        .attr("stroke-width", d => 1 + 14 * d.w);
+
+      svg1.append("circle")
+        .attr("class", "dynamic")
+        .attr("cx", mx)
+        .attr("cy", my)
+        .attr("r", 7)
+        .attr("fill", "#dc2626");
+
+      svg1.append("text")
+        .attr("class", "dynamic")
+        .attr("x", mx + 10)
+        .attr("y", my - 10)
+        .attr("font-size", 12)
+        .attr("font-weight", 700)
+        .text("xq");
+
+      svg2.append("circle")
+        .attr("class", "dynamic")
+        .attr("cx", xScale(v_xq[0]))
+        .attr("cy", yScale(v_xq[1]))
+        .attr("r", 7)
+        .attr("fill", "#f59e0b");
+
+      svg2.append("text")
+        .attr("class", "dynamic")
+        .attr("x", xScale(v_xq[0]) + 10)
+        .attr("y", yScale(v_xq[1]) - 10)
+        .attr("font-size", 12)
+        .attr("font-weight", 700)
+        .text("v(xq)");
+
+      svg3.selectAll(".value-point")
+        .data(points)
+        .enter()
+        .append("circle")
+        .attr("class", "dynamic value-point")
+        .attr("cx", d => xScale(v(d)[0]))
+        .attr("cy", d => yScale(v(d)[1]))
+        .attr("r", 5)
+        .attr("fill", "#16a34a");
+
+      svg3.selectAll(".value-label")
+        .data(points)
+        .enter()
+        .append("text")
+        .attr("class", "dynamic value-label")
+        .attr("x", d => xScale(v(d)[0]) + 8)
+        .attr("y", d => yScale(v(d)[1]) - 8)
+        .attr("font-size", 12)
+        .text((d, i) => `v(x${i + 1})`);
+
+      svg3.append("circle")
+        .attr("class", "dynamic")
+        .attr("cx", xScale(v_xq[0]))
+        .attr("cy", yScale(v_xq[1]))
+        .attr("r", 7)
+        .attr("fill", "#f59e0b");
+
+      svg3.append("text")
+        .attr("class", "dynamic")
+        .attr("x", xScale(v_xq[0]) + 10)
+        .attr("y", yScale(v_xq[1]) - 10)
+        .attr("font-size", 12)
+        .attr("font-weight", 700)
+        .text("start");
+
+      const massX = xScale(x_q_prime[0]);
+      const massY = yScale(x_q_prime[1]);
+
+      const nonSelfData = points.map((xk, i) => ({
+        source: v(xk),
+        weight: a_qk[i]
+      }));
+
+      svg3.selectAll(".spring.nonself")
+        .data(nonSelfData)
+        .enter()
+        .append("path")
+        .attr("class", "dynamic spring nonself")
+        .attr("d", d => {
+          const sx = xScale(d.source[0]);
+          const sy = yScale(d.source[1]);
+          const amp = 3 + 18 * d.weight;
+          return springPath(sx, sy, massX, massY, 8, amp);
+        })
+        .attr("fill", "none")
+        .attr("stroke", "#111827")
+        .attr("stroke-opacity", d => 0.25 + 0.75 * (d.weight / maxOtherWeight))
+        .attr("stroke-width", d => 1 + 12 * d.weight);
+
+      const selfWeight = a_qk[a_qk.length - 1];
+
+      svg3.append("path")
+        .attr("class", "dynamic spring self")
+        .attr("d", springPath(xScale(v_xq[0]), yScale(v_xq[1]), massX, massY, 8, 6))
+        .attr("fill", "none")
+        .attr("stroke", "#7c3aed")
+        .attr("stroke-opacity", 0.9)
+        .attr("stroke-width", 2.5);
+
+      svg3.append("circle")
+        .attr("class", "dynamic")
+        .attr("cx", massX)
+        .attr("cy", massY)
+        .attr("r", 9)
+        .attr("fill", "#dc2626");
+
+      svg3.append("text")
+        .attr("class", "dynamic")
+        .attr("x", massX + 12)
+        .attr("y", massY - 12)
+        .attr("font-size", 13)
+        .attr("font-weight", 700)
+        .text("xq'");
+
+      svg3.append("line")
+        .attr("class", "dynamic")
+        .attr("x1", xScale(v_xq[0]))
+        .attr("y1", yScale(v_xq[1]))
+        .attr("x2", massX)
+        .attr("y2", massY)
+        .attr("stroke", "#dc2626")
+        .attr("stroke-dasharray", "5,5")
+        .attr("stroke-width", 1.5)
+        .attr("stroke-opacity", 0.8);
+
+      renderWeightsTable(S_xk, rawScores, a_qk, selfWeight);
+    }
+
+    function renderWeightsTable(S_xk, rawScores, weights, selfWeight) {
+      const rows = S_xk.map((xk, i) => {
+        const label = i < points.length ? `x${i + 1}` : `xq (self)`;
+        return {
+          label,
+          raw: rawScores[i],
+          weight: weights[i]
+        };
+      });
+
+      const html = `
+        <table class="weight-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Raw score \(s_{qk}\)</th>
+              <th>Softmaxed weight \(a_{qk}\)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${r.label}</td>
+                <td>${r.raw.toFixed(3)}</td>
+                <td>${r.weight.toFixed(3)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <div class="note">
+          The raw affinity scores are computed using 
+          <code>s_{qk} = exp(-λ||x_q - x_k||²)</code> with fixed \(\\lambda = 0.1\),
+          and then normalised so that all attention weights sum to 1. The purple spring shows self-attention.
+        </div>
+      `;
+
+      d3.select("#weights-panel").html(html);
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+    }
+
+    function initialiseScene() {
+      points = generatePoints();
+      drawStaticPanels();
+
+      svg1.selectAll(".dynamic").remove();
+      svg2.selectAll(".dynamic").remove();
+      svg3.selectAll(".dynamic").remove();
+      d3.select("#weights-panel").html("");
+
+      hasPlacedQuery = false;
+      lastClick = [width / 2, height / 2];
+    }
+
     svg1.on("click", function(event) {
       lastClick = d3.pointer(event);
+      hasPlacedQuery = true;
       updatePlots();
     });
 
-    // Update lambda value and re-compute kernel on slider change
-    d3.select("#lambda-slider").on("input", function() {
-      lambda = +this.value;
-      d3.select("#lambda-value").text(lambda.toFixed(3));
-      updatePlots();
+    d3.select("#reset-btn").on("click", function() {
+      initialiseScene();
     });
+
+    initialiseScene();
   </script>
 </body>
 </html>
