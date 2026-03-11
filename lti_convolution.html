@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LTI Convolution Demo: Mass-Spring with Friction</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #2563eb;
+      --accent2: #059669;
+      --accent3: #dc2626;
+      --accent4: #7c3aed;
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      line-height: 1.15;
+    }
+
+    .sub {
+      color: var(--muted);
+      margin-bottom: 18px;
+      font-size: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(0,0,0,0.05);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .controls {
+      position: sticky;
+      top: 16px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      margin: 0 0 10px;
+      font-weight: 700;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: centre;
+      margin: 10px 0;
+    }
+
+    label {
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    select, textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 6px 18px rgba(37,99,235,0.25);
+    }
+
+    button.secondary {
+      background: #eef2ff;
+      color: #1d4ed8;
+      box-shadow: none;
+    }
+
+    button.green {
+      background: var(--accent2);
+      box-shadow: 0 6px 18px rgba(5,150,105,0.22);
+    }
+
+    .wide-btn {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 18px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      margin: 0 0 8px;
+      font-weight: 700;
+    }
+
+    .formula {
+      background: #f3f4f6;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.93rem;
+      overflow-x: auto;
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+
+    canvas {
+      width: 100%;
+      display: block;
+      background: linear-gradient(180deg, #ffffff, #fafafa);
+      border-radius: 14px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    #systemCanvas { height: 240px; }
+    .plotCanvas { height: 220px; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .chip {
+      background: #f9fafb;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+
+    .chip .k {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .chip .v {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: centre;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 4px;
+      border-radius: 999px;
+      background: black;
+    }
+
+    .footer {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .controls { position: static; }
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>LTI Convolution Demo with a Damped Mass-Spring System</h1>
+    <div class="sub">Measure the impulse response, then build the output for increasingly richer inputs until the convolution rule emerges naturally.</div>
+
+    <div class="grid">
+      <div class="panel controls">
+        <h2 class="section-title">System parameters</h2>
+        <div class="small">The simulator uses <span class="mono">x[n] = a x[n-1] + b x[n-2] + c u[n]</span>, with <span class="mono">a = (2m-d-k)/m</span>, <span class="mono">b = (d-m)/m</span>, and <span class="mono">c = g/m</span>. Here <span class="mono">m</span> is the mass, <span class="mono">k</span> the spring stiffness, <span class="mono">d</span> the damping, and <span class="mono">g</span> the input coupling.</div>
+
+        <div class="row"><label for="mass">Mass</label><span id="massVal">1.0</span></div>
+        <input id="mass" type="range" min="0.5" max="3" step="0.1" value="1.0" />
+
+        <div class="row"><label for="stiffness">Spring stiffness</label><span id="stiffnessVal">0.28</span></div>
+        <input id="stiffness" type="range" min="0.05" max="0.8" step="0.01" value="0.28" />
+
+        <div class="row"><label for="damping">Damping</label><span id="dampingVal">0.12</span></div>
+        <input id="damping" type="range" min="0.00" max="0.50" step="0.01" value="0.12" />
+
+        <div class="row"><label for="forceScale">Input coupling</label><span id="forceScaleVal">0.65</span></div>
+        <input id="forceScale" type="range" min="0.1" max="1.5" step="0.05" value="0.65" />
+
+        <div class="row"><label for="steps">Sequence length</label><span id="stepsVal">60</span></div>
+        <input id="steps" type="range" min="25" max="140" step="1" value="60" />
+
+        <div class="btns">
+          <button id="measureImpulse" class="green">Measure impulse response h[n]</button>
+          <button id="resetAnim" class="secondary">Reset animation</button>
+        </div>
+
+        <h2 class="section-title" style="margin-top:16px;">Input force</h2>
+        <div class="small">We begin with a single delayed impulse. Then we can move to more general force patterns and see how the full output is assembled from shifted copies of the measured impulse response.</div>
+
+        <div class="row" style="grid-template-columns: 1fr;">
+          <label for="preset">Preset force</label>
+        </div>
+        <select id="preset">
+          <option value="single" selected>Single delayed impulse</option>
+          <option value="double">Two impulses</option>
+          <option value="pulse">Rectangular pulse</option>
+          <option value="triangle">Triangular push</option>
+          <option value="sine">Sampled sine burst</option>
+          <option value="random">Random pushes</option>
+          <option value="custom">Custom sequence</option>
+        </select>
+
+        <div class="row" style="grid-template-columns: 1fr; margin-top:10px;">
+          <label for="customForce">Custom sequence, comma separated</label>
+        </div>
+        <textarea id="customForce">0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0</textarea>
+
+        <div class="btns">
+          <button id="applyPreset">Load force</button>
+          <button id="runCompare" class="green">Apply force</button>
+        </div>
+        <button id="playAnimation" class="wide-btn">Play system animation</button>
+
+        <div class="formula" id="formulaBox">For a delayed unit impulse at time k₀, u[n] = δ[n-k₀], so the output is a delayed copy of the measured impulse response: y[n] ≈ h[n-k₀]. For a general input u[n] = Σₖ u[k] δ[n-k], linearity gives y[n] ≈ Σₖ u[k] h[n-k].</div>
+
+        <div class="info-grid">
+          <div class="chip">
+            <div class="k">Current frame</div>
+            <div class="v" id="frameChip">0</div>
+          </div>
+          <div class="chip">
+            <div class="k">Direct sim x[n]</div>
+            <div class="v" id="directChip">0.000</div>
+          </div>
+          <div class="chip">
+            <div class="k">Convolution y[n]</div>
+            <div class="v" id="convChip">0.000</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cards">
+          <div class="panel">
+            <h3 class="card-title">1. Physical system animation</h3>
+            <canvas id="systemCanvas" width="700" height="240"></canvas>
+            <div class="legend">
+              <div class="legend-item"><span class="swatch" style="background:#2563eb"></span> Mass displacement</div>
+              <div class="legend-item"><span class="swatch" style="background:#dc2626"></span> Applied force at current step</div>
+              <div class="legend-item"><span class="swatch" style="background:#059669"></span> Measured impulse response sample</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">2. Impulse response h[n]</h3>
+            <canvas id="impulseCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small">First click <span class="mono">Measure impulse response h[n]</span>. This applies a unit impulse at <span class="mono">n = 0</span> and records the resulting motion. We will then treat this measured sequence as the system signature.</div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">3. Input force u[n]</h3>
+            <canvas id="inputCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small" id="inputExplain">Any discrete input can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k] δ[n-k]</span>. This means that at each time index <span class="mono">k</span> we place a shifted unit impulse <span class="mono">δ[n-k]</span> and scale it by the input value <span class="mono">u[k]</span>. For the current input, the highlighted simple case is shown here.</div>
+          </div>
+
+          <div class="panel">
+            <h3 class="card-title">4. Output: direct simulation vs convolution</h3>
+            <canvas id="outputCanvas" class="plotCanvas" width="700" height="220"></canvas>
+            <div class="small" id="outputExplain">Blue is the true simulated motion. Purple is the response reconstructed from <span class="mono">h[n]</span> using convolution. For a single delayed impulse <span class="mono">u[n] = δ[n-k₀]</span>, linearity and shift invariance give <span class="mono">y[n] ≈ h[n-k₀]</span>. For a general weighted impulse train, we add these delayed responses: <span class="mono">y[n] ≈ Σₖ u[k] h[n-k]</span>.</div>
+          </div>
+        </div>
+        <div class="footer">(c) Fayyaz Minhas</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const els = {
+      mass: document.getElementById('mass'),
+      stiffness: document.getElementById('stiffness'),
+      damping: document.getElementById('damping'),
+      forceScale: document.getElementById('forceScale'),
+      steps: document.getElementById('steps'),
+      massVal: document.getElementById('massVal'),
+      stiffnessVal: document.getElementById('stiffnessVal'),
+      dampingVal: document.getElementById('dampingVal'),
+      forceScaleVal: document.getElementById('forceScaleVal'),
+      stepsVal: document.getElementById('stepsVal'),
+      preset: document.getElementById('preset'),
+      customForce: document.getElementById('customForce'),
+      formulaBox: document.getElementById('formulaBox'),
+      frameChip: document.getElementById('frameChip'),
+      directChip: document.getElementById('directChip'),
+      convChip: document.getElementById('convChip'),
+      inputExplain: document.getElementById('inputExplain'),
+      outputExplain: document.getElementById('outputExplain'),
+      systemCanvas: document.getElementById('systemCanvas'),
+      impulseCanvas: document.getElementById('impulseCanvas'),
+      inputCanvas: document.getElementById('inputCanvas'),
+      outputCanvas: document.getElementById('outputCanvas')
+    };
+
+    const state = {
+      mass: 1.0,
+      stiffness: 0.28,
+      damping: 0.12,
+      forceScale: 0.65,
+      steps: 60,
+      impulse: [],
+      input: [],
+      direct: [],
+      conv: [],
+      frame: 0,
+      animId: null,
+      playing: false,
+      highlightK: 0
+    };
+
+    function updateLabels() {
+      els.massVal.textContent = Number(els.mass.value).toFixed(1);
+      els.stiffnessVal.textContent = Number(els.stiffness.value).toFixed(2);
+      els.dampingVal.textContent = Number(els.damping.value).toFixed(2);
+      els.forceScaleVal.textContent = Number(els.forceScale.value).toFixed(2);
+      els.stepsVal.textContent = els.steps.value;
+
+      state.mass = Number(els.mass.value);
+      state.stiffness = Number(els.stiffness.value);
+      state.damping = Number(els.damping.value);
+      state.forceScale = Number(els.forceScale.value);
+      state.steps = Number(els.steps.value);
+    }
+
+    function recurrenceCoeffs() {
+      const m = state.mass;
+      const k = state.stiffness;
+      const d = state.damping;
+      const g = state.forceScale;
+      const a = (2 * m - d - k) / m;
+      const b = (d - m) / m;
+      const c = g / m;
+      return { a, b, c };
+    }
+
+    function simulate(input) {
+      const { a, b, c } = recurrenceCoeffs();
+      const N = input.length;
+      const x = new Array(N).fill(0);
+      for (let n = 0; n < N; n++) {
+        const x1 = n - 1 >= 0 ? x[n - 1] : 0;
+        const x2 = n - 2 >= 0 ? x[n - 2] : 0;
+        x[n] = a * x1 + b * x2 + c * input[n];
+      }
+      return x;
+    }
+
+    function unitImpulse(N) {
+      const arr = new Array(N).fill(0);
+      arr[0] = 1;
+      return arr;
+    }
+
+    function convolve(u, h) {
+      const N = u.length;
+      const M = h.length;
+      const y = new Array(N).fill(0);
+      for (let n = 0; n < N; n++) {
+        let sum = 0;
+        for (let k = 0; k < N; k++) {
+          const idx = n - k;
+          if (idx >= 0 && idx < M) sum += u[k] * h[idx];
+        }
+        y[n] = sum;
+      }
+      return y;
+    }
+
+    function presetForce(name, N) {
+      const u = new Array(N).fill(0);
+      if (name === 'single') {
+        if (N > 6) u[6] = 1;
+      } else if (name === 'double') {
+        if (N > 4) u[4] = 1;
+        if (N > 16) u[16] = 0.7;
+      } else if (name === 'pulse') {
+        for (let i = 8; i < Math.min(18, N); i++) u[i] = 0.5;
+      } else if (name === 'triangle') {
+        const start = 6;
+        const peak = 13;
+        const end = 20;
+        for (let i = start; i <= peak && i < N; i++) u[i] = (i - start + 1) / (peak - start + 1);
+        for (let i = peak + 1; i <= end && i < N; i++) u[i] = Math.max(0, 1 - (i - peak) / (end - peak + 1));
+      } else if (name === 'sine') {
+        for (let i = 5; i < Math.min(30, N); i++) u[i] = 0.9 * Math.sin((i - 5) * 0.35);
+      } else if (name === 'random') {
+        for (let i = 0; i < N; i++) {
+          const r = Math.random();
+          if (r > 0.78) u[i] = +(Math.random() * 1.1 - 0.2).toFixed(2);
+        }
+      }
+      return u;
+    }
+
+    function toText(arr) {
+      return arr.map(v => Number(v.toFixed(2))).join(', ');
+    }
+
+    function parseCustom(text, N) {
+      const vals = text.split(',').map(s => Number(s.trim())).filter(v => !Number.isNaN(v));
+      const out = new Array(N).fill(0);
+      for (let i = 0; i < Math.min(N, vals.length); i++) out[i] = vals[i];
+      return out;
+    }
+
+    function findNonZeroIndices(arr) {
+      const idx = [];
+      arr.forEach((v, i) => {
+        if (Math.abs(v) > 1e-9) idx.push(i);
+      });
+      return idx;
+    }
+
+    function updateTextPanels() {
+      const idx = findNonZeroIndices(state.input);
+      if (idx.length === 1 && Math.abs(state.input[idx[0]] - 1) < 1e-9) {
+        const k0 = idx[0];
+        els.inputExplain.innerHTML = `Any discrete input can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k] δ[n-k]</span>. Here there is only one non-zero force sample, at <span class="mono">k₀ = ${k0}</span>, so the input is exactly <span class="mono">u[n] = δ[n-${k0}]</span>. That is, it is a single unit impulse shifted to the right by ${k0} time steps.`;
+        els.outputExplain.innerHTML = `Blue is the true simulated motion. Purple is the response reconstructed from <span class="mono">h[n]</span> using convolution. Since the current input is <span class="mono">u[n] = δ[n-${k0}]</span>, linearity and shift invariance imply <span class="mono">y[n] ≈ h[n-${k0}]</span>. So the output is just a delayed copy of the measured impulse response.`;
+        els.formulaBox.textContent = `For the current delayed unit impulse u[n] = δ[n-${k0}], the output is y[n] ≈ h[n-${k0}]. More generally, if u[n] = Σₖ u[k] δ[n-k], then y[n] ≈ Σₖ u[k] h[n-k].`;
+      } else {
+        const terms = idx.slice(0, 5).map(k => {
+          const coeff = Number(state.input[k].toFixed(2));
+          return `${coeff}δ[n-${k}]`;
+        });
+        const suffix = idx.length > 5 ? ' + ...' : '';
+        const expansion = terms.length ? terms.join(' + ') + suffix : '0';
+        els.inputExplain.innerHTML = `Any discrete input can be written as a weighted impulse train: <span class="mono">u[n] = Σₖ u[k] δ[n-k]</span>. For the current force, this begins as <span class="mono">u[n] = ${expansion}</span>. Each term contributes a scaled and delayed copy of the measured impulse response.`;
+        els.outputExplain.innerHTML = `Blue is the true simulated motion. Purple is the response reconstructed from <span class="mono">h[n]</span> using convolution. By linearity, each term <span class="mono">u[k]δ[n-k]</span> contributes <span class="mono">u[k]h[n-k]</span>, so the total output is approximated by <span class="mono">y[n] ≈ Σₖ u[k] h[n-k]</span>. This is how convolution emerges from the measured impulse response.`;
+        els.formulaBox.textContent = `Current input expansion: u[n] = ${expansion}. Therefore y[n] ≈ Σₖ u[k] h[n-k].`;
+      }
+    }
+
+    function loadPreset() {
+      const N = state.steps;
+      let u;
+      if (els.preset.value === 'custom') u = parseCustom(els.customForce.value, N);
+      else u = presetForce(els.preset.value, N);
+      state.input = u;
+      els.customForce.value = toText(u);
+      updateTextPanels();
+      drawAll();
+    }
+
+    function measureImpulse() {
+      state.impulse = simulate(unitImpulse(state.steps));
+      drawAll();
+    }
+
+    function compare() {
+      if (!state.impulse.length) return;
+      state.direct = simulate(state.input);
+      state.conv = convolve(state.input, state.impulse);
+      updateTextPanels();
+      drawAll();
+    }
+
+    function resetAnimation() {
+      stopAnimation();
+      state.frame = 0;
+      state.highlightK = findNonZeroIndices(state.input)[0] ?? 0;
+      updateReadout();
+      drawAll();
+    }
+
+    function stopAnimation() {
+      if (state.animId) cancelAnimationFrame(state.animId);
+      state.animId = null;
+      state.playing = false;
+    }
+
+    function playAnimation() {
+      stopAnimation();
+      state.playing = true;
+      function step() {
+        state.frame += 1;
+        if (state.frame >= state.steps) state.frame = 0;
+        const nz = findNonZeroIndices(state.input);
+        if (nz.length) state.highlightK = nz[state.frame % nz.length];
+        updateReadout();
+        drawAll();
+        state.animId = requestAnimationFrame(step);
+      }
+      step();
+    }
+
+    function updateReadout() {
+      const n = Math.min(state.frame, state.steps - 1);
+      els.frameChip.textContent = String(n);
+      els.directChip.textContent = state.direct.length ? state.direct[n].toFixed(3) : '0.000';
+      els.convChip.textContent = state.conv.length ? state.conv[n].toFixed(3) : '0.000';
+    }
+
+    function getCtx(canvas) {
+      return canvas.getContext('2d');
+    }
+
+    function clear(ctx, canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawAxes(ctx, w, h, margin, xLabel, yLabel) {
+      ctx.save();
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, h - margin.bottom);
+      ctx.lineTo(w - margin.right, h - margin.bottom);
+      ctx.moveTo(margin.left, margin.top);
+      ctx.lineTo(margin.left, h - margin.bottom);
+      ctx.stroke();
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.fillText(xLabel, w - margin.right - 8, h - 8);
+      ctx.save();
+      ctx.translate(14, margin.top + 8);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+      ctx.restore();
+    }
+
+    function drawStemPlot(canvas, data, options = {}) {
+      const ctx = getCtx(canvas);
+      clear(ctx, canvas);
+      const w = canvas.width, h = canvas.height;
+      const margin = { left: 45, right: 18, top: 16, bottom: 28 };
+      drawAxes(ctx, w, h, margin, 'n', options.yLabel || 'value');
+      const N = Math.max(1, data.length);
+      const extra = (options.extraData || []).flat().filter(v => Number.isFinite(v));
+      const all = data.concat(extra);
+      const maxAbs = Math.max(1e-6, ...all.map(v => Math.abs(v)), 1);
+      const y0 = h - margin.bottom - ((0 - (-maxAbs)) / (2 * maxAbs)) * (h - margin.top - margin.bottom);
+
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y0);
+      ctx.lineTo(w - margin.right, y0);
+      ctx.stroke();
+
+      const xMap = n => margin.left + n * (w - margin.left - margin.right) / Math.max(1, N - 1);
+      const yMap = v => h - margin.bottom - ((v + maxAbs) / (2 * maxAbs)) * (h - margin.top - margin.bottom);
+
+      if (options.lineData) {
+        ctx.strokeStyle = options.lineColor || '#7c3aed';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        options.lineData.forEach((v, i) => {
+          const x = xMap(i), y = yMap(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = options.color || '#2563eb';
+      ctx.fillStyle = options.color || '#2563eb';
+      ctx.lineWidth = 1.5;
+      data.forEach((v, i) => {
+        const x = xMap(i), y = yMap(v);
+        ctx.beginPath();
+        ctx.moveTo(x, y0);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (Number.isInteger(options.highlight) && options.highlight >= 0 && options.highlight < data.length) {
+        const i = options.highlight;
+        const x = xMap(i), y = yMap(data[i]);
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, margin.top);
+        ctx.lineTo(x, h - margin.bottom);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function drawSystem() {
+      const canvas = els.systemCanvas;
+      const ctx = getCtx(canvas);
+      clear(ctx, canvas);
+      const w = canvas.width, h = canvas.height;
+      const floorY = 185;
+      const anchorX = 70;
+      const massW = 90;
+      const massH = 58;
+      const n = Math.min(state.frame, state.steps - 1);
+      const x = state.direct.length ? state.direct[n] : 0;
+      const u = state.input.length ? state.input[n] : 0;
+      const hval = state.impulse.length ? state.impulse[Math.min(n, state.impulse.length - 1)] : 0;
+      const massX = 220 + x * 90;
+
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#d1d5db';
+      ctx.fillRect(0, floorY, w, 4);
+      ctx.fillStyle = '#9ca3af';
+      for (let i = 0; i < w; i += 16) ctx.fillRect(i, floorY + 6 + (i % 32 === 0 ? 0 : 3), 8, 2);
+
+      ctx.fillStyle = '#4b5563';
+      ctx.fillRect(anchorX, 56, 16, 104);
+
+      ctx.strokeStyle = '#111827';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      let sx = anchorX + 16;
+      let sy = 106;
+      ctx.moveTo(sx, sy);
+      const endX = massX;
+      const coils = 10;
+      const step = (endX - sx) / (coils * 2);
+      for (let i = 0; i < coils * 2; i++) {
+        const px = sx + step * (i + 1);
+        const py = sy + (i % 2 === 0 ? -16 : 16);
+        ctx.lineTo(px, py);
+      }
+      ctx.lineTo(endX, sy);
+      ctx.stroke();
+
+      ctx.fillStyle = '#2563eb';
+      roundRect(ctx, massX, floorY - massH, massW, massH, 14, true, false);
+      ctx.fillStyle = 'rgba(37,99,235,0.18)';
+      ctx.fillRect(massX - 2, floorY - 8, massW + 4, 8);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '15px Inter, sans-serif';
+      ctx.fillText('surface friction', 18, floorY + 26);
+
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 4;
+      const forceLen = 50 * u;
+      ctx.beginPath();
+      ctx.moveTo(massX + massW + 16, floorY - 28);
+      ctx.lineTo(massX + massW + 16 + forceLen, floorY - 28);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(massX + massW + 16 + forceLen, floorY - 28);
+      ctx.lineTo(massX + massW + 8 + forceLen, floorY - 34);
+      ctx.lineTo(massX + massW + 8 + forceLen, floorY - 22);
+      ctx.closePath();
+      ctx.fillStyle = '#dc2626';
+      ctx.fill();
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '14px Inter, sans-serif';
+      ctx.fillText(`n = ${n}`, 18, 24);
+      ctx.fillText(`u[n] = ${u.toFixed(2)}`, 18, 44);
+      ctx.fillText(`x[n] = ${x.toFixed(3)}`, 18, 64);
+      ctx.fillStyle = '#059669';
+      ctx.fillText(`h[n] = ${hval.toFixed(3)}`, 18, 84);
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      if (typeof r === 'number') r = { tl: r, tr: r, br: r, bl: r };
+      ctx.beginPath();
+      ctx.moveTo(x + r.tl, y);
+      ctx.lineTo(x + w - r.tr, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r.tr);
+      ctx.lineTo(x + w, y + h - r.br);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h);
+      ctx.lineTo(x + r.bl, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r.bl);
+      ctx.lineTo(x, y + r.tl);
+      ctx.quadraticCurveTo(x, y, x + r.tl, y);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    function drawAll() {
+      drawSystem();
+      drawStemPlot(els.impulseCanvas, state.impulse.length ? state.impulse : new Array(state.steps).fill(0), {
+        color: '#059669',
+        highlight: state.frame,
+        yLabel: 'h[n]'
+      });
+      drawStemPlot(els.inputCanvas, state.input.length ? state.input : new Array(state.steps).fill(0), {
+        color: '#dc2626',
+        highlight: state.highlightK,
+        yLabel: 'u[n]'
+      });
+      drawStemPlot(els.outputCanvas, state.direct.length ? state.direct : new Array(state.steps).fill(0), {
+        color: '#2563eb',
+        lineData: state.conv.length ? state.conv : undefined,
+        lineColor: '#7c3aed',
+        highlight: state.frame,
+        extraData: [state.conv],
+        yLabel: 'x[n], y[n]'
+      });
+      updateReadout();
+    }
+
+    function attachEvents() {
+      [els.mass, els.stiffness, els.damping, els.forceScale, els.steps].forEach(el => {
+        el.addEventListener('input', () => {
+          updateLabels();
+          loadPreset();
+          state.impulse = [];
+          state.direct = [];
+          state.conv = [];
+          drawAll();
+        });
+      });
+
+      document.getElementById('measureImpulse').addEventListener('click', () => {
+        measureImpulse();
+        updateTextPanels();
+        drawAll();
+      });
+      document.getElementById('applyPreset').addEventListener('click', () => {
+        loadPreset();
+        drawAll();
+      });
+      document.getElementById('runCompare').addEventListener('click', compare);
+      document.getElementById('playAnimation').addEventListener('click', playAnimation);
+      document.getElementById('resetAnim').addEventListener('click', resetAnimation);
+      els.preset.addEventListener('change', loadPreset);
+    }
+
+    function init() {
+      updateLabels();
+      attachEvents();
+      state.input = presetForce('single', state.steps);
+      els.preset.value = 'single';
+      els.customForce.value = toText(state.input);
+      state.highlightK = 6;
+      updateTextPanels();
+      drawAll();
+    }
+
+    init();
+  </script>
+</body>
+</html>
