@@ -340,11 +340,11 @@
         </div>
         <div class="footer"><div style="margin-top:20px; font-size:0.95rem; line-height:1.6; color:#374151;">
 <strong>Conceptual explanation</strong><br><br>
-Imagine there is a radar and a target somewhere in the environment. The radar sends out a short pulse of energy. After travelling through the environment, part of that energy reflects from the target and returns or "filters back" to the radar as an echo. The time it takes for the echo to return determines the delay, which is related to the distance of the target.
+Imagine there is a radar and a target somewhere in the environment. The radar sends out a short pulse of energy. After travelling through the environment, part of that energy reflects from the target and returns or “filters back” to the radar as an echo. The time it takes for the echo to return determines the delay, which is related to the distance of the target.
 <br><br>
 In the demo, the radar first sends a <span class="mono">unit pulse</span> <span class="mono">u[n] = δ[n]</span>. The environment responds with a returned signal <span class="mono">h[n]</span>. This measured signal is called the <em>impulse response</em> of the environment. It tells us how the environment reacts to a single transmitted pulse.
 <br><br>
-If the radar sends the same pulse later in time, the echo is simply a delayed copy of the same response. If the transmitted pulse is scaled, the echo scales as well. These observations reflect the assumptions of a <em>linear time‑invariant system</em>.
+If the radar sends the same pulse later in time, the echo is simply a delayed copy of the same response. If the transmitted pulse is scaled, the echo scales as well. These observations reflect the assumptions of a <em>linear time-invariant system</em>.
 <br><br>
 Any transmitted discrete signal can be written as a sum of scaled and shifted impulses
 <br>
@@ -354,15 +354,21 @@ Each of these impulses generates its own delayed copy of the impulse response. B
 <br>
 <span class="mono">y[n] ≈ Σₖ u[k] h[n-k]</span>
 <br><br>
-This operation is called <strong>convolution</strong>. Convolution answers the question (for a linear system): <em>If we know how the environment responds to a single pulse, what signal will we receive for any transmitted waveform?</em>
+This operation is called <strong>convolution</strong>. Convolution answers the question (for a linear system): <em>If we know how the environment responds to or “filters” a single pulse, what signal will we receive for any transmitted waveform?</em>
 <br><br>
-The final panel illustrates <strong>cross‑correlation</strong>. Instead of predicting the returned signal, correlation measures how strongly the transmitted signal and the received signal match when one is shifted relative to the other. In dot‑product form
+The final panel illustrates <strong>cross-correlation</strong>. Instead of predicting the returned signal, correlation measures how strongly the transmitted signal and the received signal match when one is shifted relative to the other. In dot-product form
 <br>
 <span class="mono">r<sub>xu</sub>[ℓ] = Σₙ x[n] u[n-ℓ]</span>
 <br><br>
 When the shifted transmitted pulse aligns with the returned echo, the dot product becomes large. The location of the peak therefore reveals the delay between transmission and echo, which corresponds to the distance of the target.
 <br><br>
 In summary, convolution models how a system transforms or filters a signal using its impulse response, while correlation measures how well two signals align as one is shifted relative to the other.
+<br><br>
+These two operations are closely related. If we flip one of the signals in time, then correlation becomes convolution:
+<br>
+<span class="mono">(x ⋆ u)[ℓ] = (x * u[-n])[ℓ]</span>
+<br><br>
+So convolution and correlation are not unrelated ideas. They differ mainly in purpose and interpretation: convolution builds the output of a system from its impulse response, while correlation measures similarity by sliding one signal against another. The time reversal explains the sign flip between the two formulas.
 </div>
 <div class="footer">(c) Fayyaz Minhas</div></div>
       </div>
@@ -787,7 +793,6 @@ In summary, convolution models how a system transforms or filters a signal using
       clear(ctx, canvas);
       const w = canvas.width, h = canvas.height;
       const margin = { left: 55, right: 18, top: 22, bottom: 26 };
-      const upperH = 120;
       const lowerTop = 150;
 
       ctx.fillStyle = '#f3f4f6';
@@ -817,7 +822,6 @@ In summary, convolution models how a system transforms or filters a signal using
       ctx.lineTo(w - margin.right, 86);
       ctx.stroke();
 
-      // zero marker on top
       ctx.strokeStyle = '#9ca3af';
       ctx.setLineDash([5,5]);
       ctx.beginPath();
@@ -828,7 +832,6 @@ In summary, convolution models how a system transforms or filters a signal using
       ctx.fillStyle = '#6b7280';
       ctx.fillText('time zero', xMapTop(0) + 6, 16);
 
-      // sent signal
       ctx.strokeStyle = '#dc2626';
       ctx.fillStyle = '#dc2626';
       tx.forEach((v, i) => {
@@ -837,7 +840,6 @@ In summary, convolution models how a system transforms or filters a signal using
         ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
       });
 
-      // returned signal with lag
       ctx.strokeStyle = '#059669';
       ctx.fillStyle = '#059669';
       rx.forEach((v, i) => {
@@ -846,7 +848,6 @@ In summary, convolution models how a system transforms or filters a signal using
         ctx.beginPath(); ctx.arc(x, y, 2.8, 0, Math.PI * 2); ctx.fill();
       });
 
-      // highlight best lag shift visually by shifting sent pulse under returned
       const shiftBaseline = 138;
       ctx.fillStyle = '#111827';
       ctx.fillText(`Shifted sent pulse for lag ℓ = ${lag}`, margin.left, 122);
@@ -865,7 +866,6 @@ In summary, convolution models how a system transforms or filters a signal using
       ctx.lineTo(w - margin.right, shiftBaseline);
       ctx.stroke();
 
-      // correlation output bottom
       const corrMargin = { left: 55, right: 18, top: lowerTop, bottom: 18 };
       const corrBase = h - 26;
       drawAxes(ctx, w, h, corrMargin, 'lag ℓ', 'rxy');
