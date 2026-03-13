@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XOR Attention Inspector in TensorFlow.js</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #2563eb;
+      --good: #059669;
+      --bad: #dc2626;
+      --shadow: 0 10px 25px rgba(0,0,0,0.08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 1550px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .hero, .panel, .footer {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 24px;
+      margin-bottom: 18px;
+    }
+
+    .footer {
+      margin-top: 18px;
+      padding: 14px 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .controls label {
+      display: block;
+      font-weight: 700;
+      margin: 12px 0 4px;
+    }
+
+    .controls input[type="range"],
+    .controls input[type="number"],
+    .controls select {
+      width: 100%;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      background: var(--accent);
+      color: white;
+    }
+
+    button.secondary {
+      background: #374151;
+    }
+
+    button.ghost {
+      background: #eef2ff;
+      color: #3730a3;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .stat {
+      background: #f9fafb;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .stat .v {
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+    }
+
+    .wide-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: white;
+      display: block;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.93rem;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #f3f4f6;
+      text-align: center;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .matrix-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: #fcfcfd;
+    }
+
+    .matrix-box {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .matrix-2x2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .matrix-1xN {
+      grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+    }
+
+    .cell {
+      border-radius: 10px;
+      padding: 10px 6px;
+      text-align: center;
+      font-weight: 700;
+      color: #111827;
+      border: 1px solid rgba(0,0,0,0.08);
+      background: #eef2ff;
+    }
+
+    .formula {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      overflow-x: auto;
+      margin-top: 14px;
+      font-family: "Times New Roman", serif;
+      font-size: 1.05rem;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .inspect-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .subtle {
+      background: #f9fafb;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    #status {
+      margin-top: 12px;
+      min-height: 24px;
+    }
+
+    .mono {
+      font-family: Consolas, Menlo, monospace;
+      font-size: 0.92rem;
+      word-break: break-word;
+    }
+
+    .disabled-block {
+      opacity: 0.5;
+    }
+
+    @media (max-width: 1200px) {
+      .layout, .main-grid, .wide-grid, .inspect-grid, .mini-grid, .matrix-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>XOR attention inspector</h1>
+      <p>
+This demo shows what self-attention is actually doing by applying it to the XOR classification problem. Each input, <code>[0,0]</code>, <code>[0,1]</code>, <code>[1,0]</code>, or <code>[1,1]</code>, is treated as a set of two scalar tokens, one per feature. The model first maps each token through learnable linear query, key, and value projections. It then computes a 2 &times; 2 attention matrix that measures how strongly each token attends to itself and to the other token within the same input. These attention weights are used to combine the value vectors into new token representations in a hidden space. The attended representations are then flattened and passed to either a linear readout or a nonlinear fully connected readout to produce the final prediction. Along the way, the demo displays the query, key, value, score, attention, and attended output tensors so you can see exactly how the learned representation is constructed and how the final classifier uses it.
+      </p>
+      <div class="formula">
+        <div><strong>Token projections</strong></div>
+        <div>Q = x &times; W<sub>q</sub>, K = x &times; W<sub>k</sub>, V = x &times; W<sub>v</sub></div>
+        <div><strong>Attention</strong></div>
+        <div>Scores = QK<sup>T</sup> / &radic;d<sub>qk</sub>, A = softmax(Scores), H = AV</div>
+        <div><strong>Readout options</strong></div>
+        <div>Linear: ŷ = w<sup>T</sup> tanh(flatten(H)) + b</div>
+        <div>Nonlinear: ŷ = W<sub>2</sub> tanh(W<sub>1</sub> tanh(flatten(H)) + b<sub>1</sub>) + b<sub>2</sub></div>
+      </div>
+      <p class="small">
+        Targets are <code>-1</code> for equal bits and <code>+1</code> for different bits.
+      </p>
+    </div>
+
+    <div class="layout">
+      <div class="panel controls">
+        <h2>Controls</h2>
+
+        <label for="epochs">Epochs: <span id="epochsVal">1200</span></label>
+        <input id="epochs" type="range" min="100" max="4000" step="100" value="1200" />
+
+        <label for="lr">Learning rate: <span id="lrVal">0.05</span></label>
+        <input id="lr" type="range" min="0.001" max="0.2" step="0.001" value="0.05" />
+
+        <label for="dQK">Query/key dimension: <span id="dQKVal">3</span></label>
+        <input id="dQK" type="range" min="1" max="6" step="1" value="3" />
+
+        <label for="dModel">Value dimension: <span id="dModelVal">3</span></label>
+        <input id="dModel" type="range" min="1" max="6" step="1" value="3" />
+
+        <div id="hiddenControlBlock">
+          <label for="hidden">Hidden width: <span id="hiddenVal">4</span></label>
+          <input id="hidden" type="range" min="1" max="12" step="1" value="4" />
+          <div id="hiddenHelp" class="small">Used only in nonlinear mode.</div>
+        </div>
+
+        <label for="mode">Readout mode</label>
+        <select id="mode">
+          <option value="linear" selected>Linear readout after attention</option>
+          <option value="nonlinear">Nonlinear hidden layer after attention</option>
+        </select>
+
+        <label>
+          <input id="trainAttention" type="checkbox" checked />
+          Train attention weights
+        </label>
+
+        <div class="row">
+          <button id="trainBtn" type="button">Train model</button>
+          <button id="stepBtn" type="button" class="secondary">Run 100 epochs</button>
+          <button id="resetBtn" type="button" class="ghost">Random reset</button>
+        </div>
+
+        <div id="status" class="small"></div>
+
+        <div class="stats">
+          <div class="stat"><div class="small">Current epoch</div><div class="v" id="epochStat">0</div></div>
+          <div class="stat"><div class="small">Loss</div><div class="v" id="lossStat">-</div></div>
+          <div class="stat"><div class="small">Accuracy</div><div class="v" id="accStat">-</div></div>
+          <div class="stat"><div class="small">TF.js</div><div class="v" id="tfStat">-</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="main-grid">
+          <div class="panel">
+            <h2>Decision map in input space</h2>
+            <p class="small">
+              Background shading shows the model output over continuous inputs. Large markers are the four XOR samples.
+            </p>
+            <canvas id="decisionCanvas" width="620" height="440"></canvas>
+          </div>
+
+          <div class="panel">
+            <h2>Training loss</h2>
+            <p class="small">Mean squared error during optimisation.</p>
+            <canvas id="lossCanvas" width="520" height="440"></canvas>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+
+        <div class="wide-grid">
+          <div class="panel">
+            <h2>Predictions on XOR corners</h2>
+            <table id="resultsTable">
+              <thead>
+                <tr>
+                  <th>Input</th>
+                  <th>Target</th>
+                  <th>Prediction</th>
+                  <th>Class</th>
+                  <th>Representation</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h2>Per-sample summary</h2>
+            <p class="small">
+              Equal-bit cases often stay symmetric. Unequal-bit cases can become asymmetric, which gives the readout layer a more informative representation.
+            </p>
+            <div id="summaryBox" class="mono"></div>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+
+        <div class="panel">
+          <h2>Internal attention pipeline for each XOR input</h2>
+          <p class="small">
+            For each sample: token projections Q, K, V, then the score matrix, softmax attention matrix, attended output H, and the flattened representation.
+          </p>
+          <div id="pipelineGrid" class="matrix-grid"></div>
+        </div>
+
+        <div style="height:18px"></div>
+
+        <div class="panel">
+          <h2>Manual input inspection</h2>
+          <p class="small">
+            Move the sliders here, then inspect the current input to see what attention does away from the four binary corners.
+          </p>
+
+          <div class="subtle" style="margin-bottom: 16px;">
+            <label for="inspectX1">x₁</label>
+            <input id="inspectX1" type="range" min="0" max="1" step="0.01" value="0" />
+            <div class="small" id="inspectX1Val">0.00</div>
+
+            <label for="inspectX2">x₂</label>
+            <input id="inspectX2" type="range" min="0" max="1" step="0.01" value="1" />
+            <div class="small" id="inspectX2Val">1.00</div>
+
+            <div class="row">
+              <button id="inspectBtn" type="button">Inspect current input</button>
+            </div>
+          </div>
+
+          <div id="inspectOutput" class="inspect-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">(c) Fayyaz Minhas</div>
+  </div>
+
+  <script>
+    const xorInputsArray = [
+      [[0], [0]],
+      [[0], [1]],
+      [[1], [0]],
+      [[1], [1]]
+    ];
+
+    const xorTargetsArray = [[-1], [1], [1], [-1]];
+    const xorLabels = ["[0,0]", "[0,1]", "[1,0]", "[1,1]"];
+
+    const el = (id) => document.getElementById(id);
+
+    ["epochs", "lr", "dQK", "dModel", "hidden"].forEach(id => {
+      el(id).addEventListener("input", () => {
+        el(id + "Val").textContent = el(id).value;
+      });
+      el(id + "Val").textContent = el(id).value;
+    });
+
+    ["inspectX1", "inspectX2"].forEach(id => {
+      el(id).addEventListener("input", () => {
+        el(id + "Val").textContent = Number(el(id).value).toFixed(2);
+      });
+      el(id + "Val").textContent = Number(el(id).value).toFixed(2);
+    });
+
+    let params = null;
+    let optimizer = null;
+    let epoch = 0;
+    let lossHistory = [];
+    let isTraining = false;
+
+    function setStatus(msg) {
+      el("status").textContent = msg;
+    }
+
+    function currentConfig() {
+      return {
+        dQK: parseInt(el("dQK").value, 10),
+        dModel: parseInt(el("dModel").value, 10),
+        hidden: parseInt(el("hidden").value, 10),
+        lr: parseFloat(el("lr").value),
+        trainAttention: el("trainAttention").checked,
+        mode: el("mode").value
+      };
+    }
+
+    function updateHiddenControlState() {
+      const isLinear = el("mode").value === "linear";
+      el("hidden").disabled = isLinear;
+      el("hiddenControlBlock").classList.toggle("disabled-block", isLinear);
+      el("hiddenHelp").textContent = isLinear
+        ? "Disabled in linear mode."
+        : "Used only in nonlinear mode.";
+    }
+
+    function randomVariable(shape, std = 0.5, trainable = true, name = "") {
+      return tf.variable(tf.randomNormal(shape, 0, std, "float32"), trainable, name);
+    }
+
+    function disposeParams() {
+      if (!params) return;
+      Object.values(params).forEach(v => {
+        if (v && typeof v.dispose === "function") v.dispose();
+      });
+      params = null;
+    }
+
+    function initialiseModel() {
+      disposeParams();
+
+      const cfg = currentConfig();
+
+      params = {
+        Wq: randomVariable([cfg.dQK], 0.8, cfg.trainAttention, "Wq"),
+        Wk: randomVariable([cfg.dQK], 0.8, cfg.trainAttention, "Wk"),
+        Wv: randomVariable([cfg.dModel], 0.8, cfg.trainAttention, "Wv"),
+        wLinear: randomVariable([2 * cfg.dModel, 1], 0.8, true, "wLinear"),
+        bLinear: tf.variable(tf.zeros([1]), true, "bLinear"),
+        W1: randomVariable([2 * cfg.dModel, cfg.hidden], 0.8, true, "W1"),
+        b1: tf.variable(tf.zeros([cfg.hidden]), true, "b1"),
+        W2: randomVariable([cfg.hidden, 1], 0.8, true, "W2"),
+        b2: tf.variable(tf.zeros([1]), true, "b2")
+      };
+
+      optimizer = tf.train.adam(cfg.lr);
+      epoch = 0;
+      lossHistory = [];
+    }
+
+    function trainableVariables() {
+      const cfg = currentConfig();
+      const vars = [params.wLinear, params.bLinear, params.W1, params.b1, params.W2, params.b2];
+      if (cfg.trainAttention) {
+        vars.push(params.Wq, params.Wk, params.Wv);
+      }
+      return vars.filter(Boolean);
+    }
+
+    function projectScalarTokens(xTensor, wVec) {
+      const d = wVec.shape[0];
+      const w = tf.reshape(wVec, [1, 1, d]);
+      return xTensor.mul(w);
+    }
+
+    function forward(xTensor) {
+      return tf.tidy(() => {
+        const cfg = currentConfig();
+
+        const Q = projectScalarTokens(xTensor, params.Wq);
+        const K = projectScalarTokens(xTensor, params.Wk);
+        const V = projectScalarTokens(xTensor, params.Wv);
+
+        const KT = tf.transpose(K, [0, 2, 1]);
+        const scores = tf.matMul(Q, KT).div(Math.sqrt(cfg.dQK));
+        const A = tf.softmax(scores, -1);
+        const H = tf.matMul(A, V);
+
+        const flat = tf.reshape(H, [xTensor.shape[0], 2 * cfg.dModel]);
+        const rep = tf.tanh(flat);
+
+        let yhat, hidden = null;
+
+        if (cfg.mode === "linear") {
+          yhat = tf.add(tf.matMul(rep, params.wLinear), params.bLinear);
+        } else {
+          const h1pre = tf.add(tf.matMul(rep, params.W1), params.b1);
+          hidden = tf.tanh(h1pre);
+          yhat = tf.add(tf.matMul(hidden, params.W2), params.b2);
+        }
+
+        return { Q, K, V, scores, A, H, flat, rep, hidden, yhat };
+      });
+    }
+
+    function lossFunction(xs, ys) {
+      return tf.tidy(() => {
+        const out = forward(xs);
+        return tf.mean(tf.square(tf.sub(out.yhat, ys)));
+      });
+    }
+
+    function colourMap(v) {
+      const t = Math.max(0, Math.min(1, v));
+      const r = Math.round(255 * (1 - t) + 59 * t);
+      const g = Math.round(240 * (1 - t) + 130 * t);
+      const b = Math.round(255 * (1 - t) + 246 * t);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    async function trainForEpochs(numEpochs) {
+      if (isTraining) return;
+      isTraining = true;
+
+      el("trainBtn").disabled = true;
+      el("stepBtn").disabled = true;
+      el("resetBtn").disabled = true;
+      el("inspectBtn").disabled = true;
+
+      const xs = tf.tensor3d(xorInputsArray, [4, 2, 1], "float32");
+      const ys = tf.tensor2d(xorTargetsArray, [4, 1], "float32");
+
+      try {
+        setStatus(`Training for ${numEpochs} epochs...`);
+
+        for (let i = 0; i < numEpochs; i++) {
+          const lossTensor = optimizer.minimize(
+            () => lossFunction(xs, ys),
+            true,
+            trainableVariables()
+          );
+
+          const lossValue = (await lossTensor.data())[0];
+          lossTensor.dispose();
+
+          lossHistory.push(lossValue);
+          epoch += 1;
+
+          if ((i + 1) % 20 === 0 || i === numEpochs - 1) {
+            await renderAll();
+            await tf.nextFrame();
+          }
+        }
+
+        setStatus(`Done. Trained for ${numEpochs} epochs.`);
+      } catch (err) {
+        console.error(err);
+        setStatus("Error during training: " + err.message);
+      } finally {
+        xs.dispose();
+        ys.dispose();
+
+        el("trainBtn").disabled = false;
+        el("stepBtn").disabled = false;
+        el("resetBtn").disabled = false;
+        el("inspectBtn").disabled = false;
+        isTraining = false;
+      }
+    }
+
+    function createCells(values, type = "matrix-1xN", normalise = true) {
+      const box = document.createElement("div");
+      box.className = `matrix-box ${type}`;
+
+      let minV = Math.min(...values);
+      let maxV = Math.max(...values);
+      const span = Math.max(1e-8, maxV - minV);
+
+      values.forEach(v => {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        const t = normalise ? (v - minV) / span : v;
+        cell.style.background = colourMap(t);
+        cell.textContent = Number(v).toFixed(3);
+        box.appendChild(cell);
+      });
+
+      return box;
+    }
+
+    function flatten2D(arr2d) {
+      const out = [];
+      for (let i = 0; i < arr2d.length; i++) {
+        for (let j = 0; j < arr2d[i].length; j++) out.push(arr2d[i][j]);
+      }
+      return out;
+    }
+
+    function renderPipeline(sampleData) {
+      const host = el("pipelineGrid");
+      host.innerHTML = "";
+
+      sampleData.forEach(sample => {
+        const card = document.createElement("div");
+        card.className = "matrix-card";
+
+        const title = document.createElement("h3");
+        title.textContent = sample.label;
+        card.appendChild(title);
+
+        const pieces = [
+          ["Q token 1", sample.Q[0]],
+          ["Q token 2", sample.Q[1]],
+          ["K token 1", sample.K[0]],
+          ["K token 2", sample.K[1]],
+          ["V token 1", sample.V[0]],
+          ["V token 2", sample.V[1]]
+        ];
+
+        const mini = document.createElement("div");
+        mini.className = "mini-grid";
+
+        pieces.forEach(([name, vals]) => {
+          const box = document.createElement("div");
+          box.className = "subtle";
+          box.innerHTML = `<strong>${name}</strong>`;
+          box.appendChild(createCells(vals, "matrix-1xN"));
+          mini.appendChild(box);
+        });
+
+        const scoreBox = document.createElement("div");
+        scoreBox.className = "subtle";
+        scoreBox.innerHTML = `<strong>Score matrix</strong>`;
+        scoreBox.appendChild(createCells(flatten2D(sample.scores), "matrix-2x2"));
+
+        const attnBox = document.createElement("div");
+        attnBox.className = "subtle";
+        attnBox.innerHTML = `<strong>Attention matrix</strong>`;
+        attnBox.appendChild(createCells(flatten2D(sample.A), "matrix-2x2", false));
+
+        const hBox = document.createElement("div");
+        hBox.className = "subtle";
+        hBox.innerHTML = `<strong>Attended output H</strong>`;
+        hBox.appendChild(createCells(flatten2D(sample.H), "matrix-1xN"));
+
+        const repBox = document.createElement("div");
+        repBox.className = "subtle";
+        repBox.innerHTML = `<strong>Flattened representation tanh(H)</strong>`;
+        repBox.appendChild(createCells(sample.rep, "matrix-1xN"));
+
+        const predBox = document.createElement("div");
+        predBox.className = "subtle mono";
+        predBox.innerHTML = `
+          <strong>Prediction summary</strong><br>
+          target = ${sample.target}<br>
+          prediction = ${sample.pred.toFixed(4)}<br>
+          class = ${sample.pred >= 0 ? 1 : -1}
+        `;
+
+        card.appendChild(mini);
+        card.appendChild(document.createElement("div")).style.height = "10px";
+
+        const bottom = document.createElement("div");
+        bottom.className = "mini-grid";
+        bottom.appendChild(scoreBox);
+        bottom.appendChild(attnBox);
+        bottom.appendChild(hBox);
+        bottom.appendChild(repBox);
+        card.appendChild(bottom);
+
+        card.appendChild(document.createElement("div")).style.height = "10px";
+        card.appendChild(predBox);
+
+        host.appendChild(card);
+      });
+    }
+
+    function drawLoss() {
+      const canvas = el("lossCanvas");
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width;
+      const H = canvas.height;
+      const m = 40;
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(m, H - m);
+      ctx.lineTo(W - m, H - m);
+      ctx.moveTo(m, H - m);
+      ctx.lineTo(m, m);
+      ctx.stroke();
+
+      ctx.fillStyle = "#111827";
+      ctx.font = "14px Arial";
+      ctx.fillText("0", m - 18, H - m + 5);
+      ctx.fillText("1", m - 18, m + 5);
+
+      if (!lossHistory.length) return;
+
+      const xMap = (i) => m + (i / Math.max(1, lossHistory.length - 1)) * (W - 2 * m);
+      const yMap = (v) => H - m - Math.max(0, Math.min(1, v)) * (H - 2 * m);
+
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+
+      lossHistory.forEach((v, i) => {
+        const x = xMap(i);
+        const y = yMap(v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      ctx.stroke();
+
+      ctx.fillStyle = "#111827";
+      ctx.font = "15px Arial";
+      ctx.fillText(`start ${lossHistory[0].toFixed(3)}`, 8, 18);
+      ctx.fillText(`end ${lossHistory[lossHistory.length - 1].toFixed(3)}`, 8, 36);
+    }
+
+    async function drawDecisionSurface() {
+      const canvas = el("decisionCanvas");
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width;
+      const H = canvas.height;
+      const m = 40;
+      const n = 46;
+
+      const pts = [];
+      for (let iy = 0; iy < n; iy++) {
+        for (let ix = 0; ix < n; ix++) {
+          pts.push([[ix / (n - 1)], [1 - iy / (n - 1)]]);
+        }
+      }
+
+      const grid = tf.tensor3d(pts, [pts.length, 2, 1], "float32");
+      const out = forward(grid);
+      const vals = await out.yhat.array();
+
+      grid.dispose();
+      Object.values(out).forEach(t => { if (t) t.dispose(); });
+
+      ctx.clearRect(0, 0, W, H);
+
+      const pw = (W - 2 * m) / n;
+      const ph = (H - 2 * m) / n;
+
+      let k = 0;
+      for (let iy = 0; iy < n; iy++) {
+        for (let ix = 0; ix < n; ix++) {
+          const v = vals[k++][0];
+          const t = Math.max(0, Math.min(1, (v + 1.5) / 3));
+          ctx.fillStyle = colourMap(t);
+          ctx.fillRect(m + ix * pw, m + iy * ph, pw + 1, ph + 1);
+        }
+      }
+
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(m, H - m);
+      ctx.lineTo(W - m, H - m);
+      ctx.moveTo(m, H - m);
+      ctx.lineTo(m, m);
+      ctx.stroke();
+
+      ctx.fillStyle = "#111827";
+      ctx.font = "16px Arial";
+      ctx.fillText("x₁", W - m + 8, H - m + 5);
+      ctx.fillText("x₂", m - 15, m - 8);
+
+      const X = x => m + x * (W - 2 * m);
+      const Y = y => H - m - y * (H - 2 * m);
+
+      [
+        { x: 0, y: 0, label: "[0,0]", cls: -1 },
+        { x: 0, y: 1, label: "[0,1]", cls: 1 },
+        { x: 1, y: 0, label: "[1,0]", cls: 1 },
+        { x: 1, y: 1, label: "[1,1]", cls: -1 }
+      ].forEach(p => {
+        ctx.beginPath();
+        ctx.fillStyle = p.cls === 1 ? "#059669" : "#dc2626";
+        ctx.arc(X(p.x), Y(p.y), 9, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = "#111827";
+        ctx.stroke();
+        ctx.fillStyle = "#111827";
+        ctx.fillText(p.label, X(p.x) + 12, Y(p.y) - 10);
+      });
+    }
+
+    async function renderManualInspection() {
+      const x1 = parseFloat(el("inspectX1").value);
+      const x2 = parseFloat(el("inspectX2").value);
+
+      const input = tf.tensor3d([[[x1], [x2]]], [1, 2, 1], "float32");
+      const out = forward(input);
+
+      const Q = (await out.Q.array())[0];
+      const K = (await out.K.array())[0];
+      const V = (await out.V.array())[0];
+      const scores = (await out.scores.array())[0];
+      const A = (await out.A.array())[0];
+      const H = (await out.H.array())[0];
+      const rep = (await out.rep.array())[0];
+      const pred = (await out.yhat.array())[0][0];
+
+      input.dispose();
+      Object.values(out).forEach(t => { if (t) t.dispose(); });
+
+      const host = el("inspectOutput");
+      host.innerHTML = "";
+
+      const cards = [
+        ["Q", flatten2D(Q), "matrix-1xN", true],
+        ["K", flatten2D(K), "matrix-1xN", true],
+        ["V", flatten2D(V), "matrix-1xN", true],
+        ["Scores", flatten2D(scores), "matrix-2x2", true],
+        ["Attention", flatten2D(A), "matrix-2x2", false],
+        ["H", flatten2D(H), "matrix-1xN", true],
+        ["Representation", rep, "matrix-1xN", true],
+        ["Prediction", [pred], "matrix-1xN", true]
+      ];
+
+      cards.forEach(([name, values, klass, normalise]) => {
+        const card = document.createElement("div");
+        card.className = "subtle";
+        card.innerHTML = `<strong>${name}</strong>`;
+        card.appendChild(createCells(values, klass, normalise));
+        host.appendChild(card);
+      });
+    }
+
+    async function renderAll() {
+      const xs = tf.tensor3d(xorInputsArray, [4, 2, 1], "float32");
+      const out = forward(xs);
+
+      const preds = await out.yhat.array();
+      const reps = await out.rep.array();
+      const Q = await out.Q.array();
+      const K = await out.K.array();
+      const V = await out.V.array();
+      const scores = await out.scores.array();
+      const A = await out.A.array();
+      const H = await out.H.array();
+
+      xs.dispose();
+      Object.values(out).forEach(t => { if (t) t.dispose(); });
+
+      const tbody = el("resultsTable").querySelector("tbody");
+      tbody.innerHTML = "";
+
+      let correct = 0;
+      let summaryLines = [];
+
+      const sampleData = [];
+
+      for (let i = 0; i < 4; i++) {
+        const pred = preds[i][0];
+        const target = xorTargetsArray[i][0];
+        const cls = pred >= 0 ? 1 : -1;
+
+        if (cls === target) correct += 1;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${xorLabels[i]}</td>
+          <td>${target}</td>
+          <td>${pred.toFixed(4)}</td>
+          <td>${cls}</td>
+          <td>[${reps[i].map(v => Number(v).toFixed(3)).join(", ")}]</td>
+        `;
+        tbody.appendChild(tr);
+
+        const row1 = A[i][0];
+        const row2 = A[i][1];
+        summaryLines.push(
+          `${xorLabels[i]}: row1=[${row1.map(v => v.toFixed(3)).join(", ")}], row2=[${row2.map(v => v.toFixed(3)).join(", ")}], pred=${pred.toFixed(3)}`
+        );
+
+        sampleData.push({
+          label: xorLabels[i],
+          target,
+          pred,
+          Q: Q[i],
+          K: K[i],
+          V: V[i],
+          scores: scores[i],
+          A: A[i],
+          H: H[i],
+          rep: reps[i]
+        });
+      }
+
+      el("summaryBox").innerHTML = summaryLines.join("<br>");
+      el("epochStat").textContent = String(epoch);
+      el("lossStat").textContent = lossHistory.length ? lossHistory[lossHistory.length - 1].toFixed(5) : "-";
+      el("accStat").textContent = ((100 * correct) / 4).toFixed(0) + "%";
+      el("tfStat").textContent = tf.version.tfjs;
+
+      drawLoss();
+      await drawDecisionSurface();
+      renderPipeline(sampleData);
+      await renderManualInspection();
+    }
+
+    async function resetAll() {
+      if (isTraining) return;
+      setStatus("Resetting...");
+      updateHiddenControlState();
+      initialiseModel();
+      await renderAll();
+      setStatus("Ready.");
+    }
+
+    window.addEventListener("load", async () => {
+      try {
+        await tf.ready();
+        updateHiddenControlState();
+        await resetAll();
+
+        el("trainBtn").addEventListener("click", async () => {
+          const nEpochs = parseInt(el("epochs").value, 10);
+          await trainForEpochs(nEpochs);
+          await renderAll();
+        });
+
+        el("stepBtn").addEventListener("click", async () => {
+          await trainForEpochs(100);
+          await renderAll();
+        });
+
+        el("resetBtn").addEventListener("click", async () => {
+          await resetAll();
+        });
+
+        ["dQK", "dModel", "hidden", "lr", "trainAttention"].forEach(id => {
+          el(id).addEventListener("change", async () => {
+            await resetAll();
+          });
+        });
+
+        el("mode").addEventListener("change", async () => {
+          updateHiddenControlState();
+          await resetAll();
+        });
+
+        ["inspectX1", "inspectX2"].forEach(id => {
+          el(id).addEventListener("input", async () => {
+            await renderManualInspection();
+          });
+        });
+
+        el("inspectBtn").addEventListener("click", async () => {
+          await renderManualInspection();
+        });
+      } catch (err) {
+        console.error(err);
+        setStatus("Initialisation error: " + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
