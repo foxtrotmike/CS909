@@ -26,10 +26,27 @@
     .sep { height:1px; background:#eee; margin:10px 0; }
     .two { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
     .warn { color:#8a3b00; }
+    .errbox {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #e2b4b4;
+      background: #fff5f5;
+      color: #8a1f1f;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      min-height: 18px;
+    }
+    .footer {
+      margin-top: 14px;
+      font-size: 12px;
+      color: #444;
+    }
   </style>
 </head>
 <body>
-  <h1>Neural Networks as Universal Approximators: Basis View and Depth Comparison (TensorFlow.js)</h1>
+  <h1>Neural Networks as Universal Approximators and Advantages of Depth</h1>
 
   <div class="row">
     <!-- ---------------- Part 1 ---------------- -->
@@ -37,7 +54,7 @@
       <h2>Part 1: Square wave (and other waves) with 1 hidden layer, P sigmoids</h2>
       <div class="small">
         Model: <span class="pill">ŷ(x) = Σᵢ vᵢ σ(wᵢ x + bᵢ) + v₀</span><br/>
-        We plot (1) target vs approximation and (2) each term <b>vᵢ σ(wᵢ x + bᵢ)</b> across x, plus the bias <b>v₀</b>.
+        We plot (1) target vs approximation and (2) hidden sigmoid bases <b>σ(wᵢx+bᵢ)</b> together with output contributions <b>vᵢσ(wᵢx+bᵢ)</b> and bias <b>v₀</b>.
       </div>
 
       <label>Wave to approximate</label>
@@ -70,34 +87,19 @@
           <input id="p1P" type="range" min="1" max="80" step="1" value="6"/>
         </div>
         <div>
-          <label>Fourier terms (K): <span id="p1KLab"></span></label>
-          <input id="p1K" type="range" min="1" max="25" step="1" value="5"/>
+          <label>Learning rate: <span id="p1LRLab"></span></label>
+          <input id="p1LR" type="range" min="-4" max="-0.3" step="0.05" value="-1"/>
         </div>
       </div>
 
       <div class="two">
-        <div>
-          <label>Learning rate: <span id="p1LRLab"></span></label>
-          <input id="p1LR" type="range" min="-4" max="-0.3" step="0.05" value="-1"/>
-        </div>
         <div>
           <label>Epochs per step: <span id="p1EpsLab"></span></label>
           <input id="p1Eps" type="range" min="1" max="300" step="1" value="30"/>
         </div>
-      </div>
-
-      <div class="two">
         <div>
           <label>Weight decay (L2): <span id="p1WDLab"></span></label>
           <input id="p1WD" type="range" min="0" max="0.1" step="0.005" value="0"/>
-        </div>
-        <div>
-          <label>Initialiser</label>
-          <select id="p1Init">
-            <option value="xavier">Xavier (glorotNormal)</option>
-            <option value="small">Small normal</option>
-            <option value="zeros">Near-zero (slow start)</option>
-          </select>
         </div>
       </div>
 
@@ -110,9 +112,9 @@
       </div>
 
       <div class="sep"></div>
-
       <div class="small warn" id="p1Note"></div>
       <div class="stat" id="p1Stats">not initialised</div>
+      <div class="errbox" id="p1Error"></div>
     </div>
 
     <div class="col">
@@ -121,8 +123,8 @@
         <canvas id="p1Fit" width="760" height="260"></canvas>
       </div>
       <div class="card">
-        <div class="small"><b>Part 1 Basis:</b> bias v₀ (thick black) and each vᵢ σ(wᵢ x + bᵢ)</div>
-        <canvas id="p1Basis" width="760" height="260"></canvas>
+        <div class="small"><b>Part 1 Basis:</b> top = hidden bases σ(wᵢx+bᵢ), bottom = contributions vᵢσ(wᵢx+bᵢ) and bias v₀</div>
+        <canvas id="p1Basis" width="760" height="320"></canvas>
       </div>
       <div class="card">
         <div class="small"><b>Part 1 Loss:</b> log10(MSE) over steps</div>
@@ -225,6 +227,7 @@
 
       <div class="sep"></div>
       <div class="stat" id="p2Stats">not initialised</div>
+      <div class="errbox" id="p2Error"></div>
     </div>
 
     <div class="col">
@@ -239,67 +242,128 @@
     </div>
   </div>
 
+  <div class="footer">(c) Fayyaz Minhas</div>
+
 <script>
 (() => {
-  // -----------------------------
-  // Plot helpers
-  // -----------------------------
-  function clear(ctx, w, h) { ctx.clearRect(0, 0, w, h); }
+  function el(id) { return document.getElementById(id); }
+
+  function reportError(where, err) {
+    const msg = `[${new Date().toLocaleTimeString()}] ${err && err.stack ? err.stack : String(err)}`;
+    console.error(msg);
+    const box = el(where);
+    if (box) box.textContent = msg;
+  }
+
+  function clearError(where) {
+    const box = el(where);
+    if (box) box.textContent = "";
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function safeDispose(x) {
+    if (!x) return;
+    if (Array.isArray(x)) {
+      for (const t of x) safeDispose(t);
+      return;
+    }
+    if (typeof x.dispose === "function") {
+      try { x.dispose(); } catch (_) {}
+    }
+  }
+
+  function clear(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  function linspace(a, b, n) {
+    const out = [];
+    if (n <= 1) return [a];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * (i / (n - 1)));
+    return out;
+  }
 
   function niceBounds(arr, padFrac=0.08) {
     let mn = Infinity, mx = -Infinity;
-    for (const v of arr) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    for (const v of arr) {
+      if (!isFinite(v)) continue;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
     if (!isFinite(mn) || !isFinite(mx)) return [-1, 1];
     if (mn === mx) return [mn - 1, mx + 1];
     const pad = (mx - mn) * padFrac;
     return [mn - pad, mx + pad];
   }
 
-  function drawAxes(ctx, w, h, xMin, xMax, yMin, yMax, pad=34) {
+  function drawAxesInRect(ctx, rect, xMin, xMax, yMin, yMax) {
+    const {x, y, w, h, pad} = rect;
     ctx.save();
     ctx.lineWidth = 1;
     ctx.strokeStyle = "#aaa";
     ctx.fillStyle = "#444";
     ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
-    ctx.strokeRect(pad, pad, w - 2*pad, h - 2*pad);
+    ctx.strokeRect(x + pad, y + pad, w - 2 * pad, h - 2 * pad);
 
     const ticks = 4;
     for (let i = 0; i <= ticks; i++) {
-      const tx = pad + (w - 2*pad) * (i / ticks);
+      const tx = x + pad + (w - 2 * pad) * (i / ticks);
       const xv = xMin + (xMax - xMin) * (i / ticks);
-      ctx.beginPath(); ctx.moveTo(tx, h - pad); ctx.lineTo(tx, h - pad + 5); ctx.stroke();
-      ctx.fillText(xv.toFixed(2), tx - 16, h - pad + 18);
+      ctx.beginPath();
+      ctx.moveTo(tx, y + h - pad);
+      ctx.lineTo(tx, y + h - pad + 5);
+      ctx.stroke();
+      ctx.fillText(xv.toFixed(2), tx - 16, y + h - pad + 18);
     }
     for (let i = 0; i <= ticks; i++) {
-      const ty = pad + (h - 2*pad) * (i / ticks);
+      const ty = y + pad + (h - 2 * pad) * (i / ticks);
       const yv = yMax - (yMax - yMin) * (i / ticks);
-      ctx.beginPath(); ctx.moveTo(pad - 5, ty); ctx.lineTo(pad, ty); ctx.stroke();
-      ctx.fillText(yv.toFixed(2), 4, ty + 4);
+      ctx.beginPath();
+      ctx.moveTo(x + pad - 5, ty);
+      ctx.lineTo(x + pad, ty);
+      ctx.stroke();
+      ctx.fillText(yv.toFixed(2), x + 4, ty + 4);
     }
     ctx.restore();
   }
 
-  function toCanvasXY(x, y, w, h, xMin, xMax, yMin, yMax, pad=34) {
-    const cx = pad + (w - 2*pad) * ((x - xMin) / (xMax - xMin));
-    const cy = pad + (h - 2*pad) * (1 - (y - yMin) / (yMax - yMin));
+  function drawAxes(ctx, w, h, xMin, xMax, yMin, yMax, pad=34) {
+    drawAxesInRect(ctx, {x:0, y:0, w, h, pad}, xMin, xMax, yMin, yMax);
+  }
+
+  function toCanvasXYInRect(xv, yv, rect, xMin, xMax, yMin, yMax) {
+    const {x, y, w, h, pad} = rect;
+    const cx = x + pad + (w - 2 * pad) * ((xv - xMin) / (xMax - xMin));
+    const cy = y + pad + (h - 2 * pad) * (1 - (yv - yMin) / (yMax - yMin));
     return [cx, cy];
   }
 
-  function drawPolyline(ctx, xs, ys, w, h, xMin, xMax, yMin, yMax, strokeStyle="#111", lineWidth=2, pad=34) {
-    if (xs.length === 0) return;
+  function toCanvasXY(x, y, w, h, xMin, xMax, yMin, yMax, pad=34) {
+    return toCanvasXYInRect(x, y, {x:0, y:0, w, h, pad}, xMin, xMax, yMin, yMax);
+  }
+
+  function drawPolylineInRect(ctx, xs, ys, rect, xMin, xMax, yMin, yMax, strokeStyle="#111", lineWidth=2) {
+    if (!xs || xs.length === 0) return;
     ctx.save();
     ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = lineWidth;
     ctx.beginPath();
-    const [x0, y0] = toCanvasXY(xs[0], ys[0], w, h, xMin, xMax, yMin, yMax, pad);
+    const [x0, y0] = toCanvasXYInRect(xs[0], ys[0], rect, xMin, xMax, yMin, yMax);
     ctx.moveTo(x0, y0);
     for (let i = 1; i < xs.length; i++) {
-      const [cx, cy] = toCanvasXY(xs[i], ys[i], w, h, xMin, xMax, yMin, yMax, pad);
+      const [cx, cy] = toCanvasXYInRect(xs[i], ys[i], rect, xMin, xMax, yMin, yMax);
       ctx.lineTo(cx, cy);
     }
     ctx.stroke();
     ctx.restore();
+  }
+
+  function drawPolyline(ctx, xs, ys, w, h, xMin, xMax, yMin, yMax, strokeStyle="#111", lineWidth=2, pad=34) {
+    drawPolylineInRect(ctx, xs, ys, {x:0, y:0, w, h, pad}, xMin, xMax, yMin, yMax, strokeStyle, lineWidth);
   }
 
   function drawDots(ctx, xs, ys, w, h, xMin, xMax, yMin, yMax, fillStyle="#111", r=3, pad=34) {
@@ -307,59 +371,57 @@
     ctx.fillStyle = fillStyle;
     for (let i = 0; i < xs.length; i++) {
       const [cx, cy] = toCanvasXY(xs[i], ys[i], w, h, xMin, xMax, yMin, yMax, pad);
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2*Math.PI); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+      ctx.fill();
     }
     ctx.restore();
   }
 
-  // -----------------------------
-  // Target functions
-  // -----------------------------
-  function linspace(a, b, n) {
-    const out = [];
-    for (let i = 0; i < n; i++) out.push(a + (b - a) * (i / (n - 1)));
-    return out;
+  function colourForIndex(j, n) {
+    const t = n <= 1 ? 0 : j / (n - 1);
+    const r = Math.round(40 + 180 * t);
+    const g = Math.round(90 + 80 * (1 - t));
+    const b = Math.round(180 - 120 * t);
+    return `rgb(${r},${g},${b})`;
   }
 
   function squareFourier(xs, K=5, A=1.0, T=1.0) {
     const ys = new Array(xs.length).fill(0);
-    const maxOdd = 2*K - 1;
+    const maxOdd = 2 * K - 1;
     for (let n = 1; n <= maxOdd; n += 2) {
-      const coef = (4*A/Math.PI) / n;
-      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2*Math.PI*n*xs[i]/T);
+      const coef = (4 * A / Math.PI) / n;
+      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2 * Math.PI * n * xs[i] / T);
     }
     return ys;
   }
 
-  function sawFourier(xs, K=10, A=1.0, T=1.0) {
-    // A simple sawtooth series on [0,T]: f(x) ≈ (2A/π) Σ_{n=1..K} (-1)^{n+1} sin(2π n x/T)/n
+  function sawFourier(xs, K=5, A=1.0, T=1.0) {
     const ys = new Array(xs.length).fill(0);
     for (let n = 1; n <= K; n++) {
       const sign = (n % 2 === 1) ? 1 : -1;
-      const coef = (2*A/Math.PI) * sign / n;
-      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2*Math.PI*n*xs[i]/T);
+      const coef = (2 * A / Math.PI) * sign / n;
+      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2 * Math.PI * n * xs[i] / T);
     }
     return ys;
   }
 
   function triangleFourier(xs, K=5, A=1.0, T=1.0) {
-    // Triangle series: (8A/π^2) Σ_{n odd} (-1)^{(n-1)/2} sin(2π n x/T)/n^2
     const ys = new Array(xs.length).fill(0);
-    const maxOdd = 2*K - 1;
+    const maxOdd = 2 * K - 1;
     for (let n = 1; n <= maxOdd; n += 2) {
       const k = (n - 1) / 2;
       const sign = (k % 2 === 0) ? 1 : -1;
-      const coef = (8*A/(Math.PI*Math.PI)) * sign / (n*n);
-      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2*Math.PI*n*xs[i]/T);
+      const coef = (8 * A / (Math.PI * Math.PI)) * sign / (n * n);
+      for (let i = 0; i < xs.length; i++) ys[i] += coef * Math.sin(2 * Math.PI * n * xs[i] / T);
     }
     return ys;
   }
 
-  function sincos(xs) { return xs.map(x => Math.sin(4*x) + Math.cos(10*x)); }
-  function sinprod(xs) { return xs.map(x => Math.sin(x) * Math.sin(4*x)); }
+  function sincos(xs) { return xs.map(x => Math.sin(4 * x) + Math.cos(10 * x)); }
+  function sinprod(xs) { return xs.map(x => Math.sin(x) * Math.sin(4 * x)); }
 
   function gaussMix(xs) {
-    // A fixed mixture: good for showing smooth bumps
     const centres = [-0.6, -0.1, 0.3, 0.75];
     const widths  = [ 0.10, 0.18, 0.12, 0.22];
     const amps    = [ 1.00, -0.7, 0.90, -0.5];
@@ -376,18 +438,12 @@
   }
 
   function smoothStep(xs) {
-    // Step-like function, still continuous
     return xs.map(x => Math.tanh(6 * (x - 0.1)));
   }
 
   function buildTarget(xs, which, K, domain) {
-    // For Fourier waves we interpret xs as spanning [0,1] or [-1,1].
-    // We map to [0,1] for Fourier formulae (period T=1).
     if (which === "square" || which === "saw" || which === "triangle") {
-      const t = xs.map(x => {
-        if (domain === "minus1to1") return (x + 1) / 2;
-        return x; // assume [0,1]
-      });
+      const t = xs.map(x => domain === "minus1to1" ? (x + 1) / 2 : x);
       if (which === "square") return squareFourier(t, K, 1.0, 1.0);
       if (which === "saw") return sawFourier(t, K, 1.0, 1.0);
       return triangleFourier(t, K, 1.0, 1.0);
@@ -398,152 +454,157 @@
     return smoothStep(xs);
   }
 
-  // -----------------------------
-  // Part 1: Shallow model + basis
-  // -----------------------------
+  const P1_K_FIXED = 5;
+
   const p1 = {
-    model: null,
-    opt: null,
     xArr: [],
     yArr: [],
     xT: null,
     yT: null,
+    w: null,
+    b: null,
+    v: null,
+    v0: null,
+    opt: null,
     running: false,
+    timer: null,
+    busy: false,
     epoch: 0,
     lossHist: [],
     lossMax: 900
   };
 
-  function p1DisposeTensors() {
-    if (p1.xT) p1.xT.dispose();
-    if (p1.yT) p1.yT.dispose();
-    p1.xT = null; p1.yT = null;
+  function p1StopLoop() {
+    p1.running = false;
+    if (p1.timer !== null) {
+      clearTimeout(p1.timer);
+      p1.timer = null;
+    }
+  }
+
+  function p1DisposeVars() {
+    safeDispose([p1.xT, p1.yT, p1.w, p1.b, p1.v, p1.v0]);
+    p1.xT = null;
+    p1.yT = null;
+    p1.w = null;
+    p1.b = null;
+    p1.v = null;
+    p1.v0 = null;
+    p1.opt = null;
+  }
+
+  function xavier1D(outDim) {
+    const fanIn = 1;
+    const fanOut = outDim;
+    const std = Math.sqrt(2 / (fanIn + fanOut));
+    return tf.randomNormal([outDim], 0, std, "float32");
+  }
+
+  function xavierScalarLike() {
+    return tf.scalar(0, "float32");
   }
 
   function p1BuildData() {
-    p1DisposeTensors();
     const N = parseInt(el("p1N").value, 10);
     const domain = el("p1Domain").value;
     const xs = (domain === "minus1to1") ? linspace(-1, 1, N) : linspace(0, 1, N);
     const which = el("p1Target").value;
-    const K = parseInt(el("p1K").value, 10);
 
     p1.xArr = xs;
-    p1.yArr = buildTarget(xs, which, K, domain);
-
-    p1.xT = tf.tensor2d(p1.xArr, [p1.xArr.length, 1], "float32");
-    p1.yT = tf.tensor2d(p1.yArr, [p1.yArr.length, 1], "float32");
-  }
-
-  function p1InitKernelBias(units) {
-    const mode = el("p1Init").value;
-    if (mode === "xavier") {
-      return {
-        kernelInit: "glorotNormal",
-        biasInit: "zeros"
-      };
-    }
-    if (mode === "small") {
-      return {
-        kernelInit: tf.initializers.randomNormal({mean:0, stddev:0.2}),
-        biasInit: tf.initializers.randomNormal({mean:0, stddev:0.2})
-      };
-    }
-    // near-zero
-    return {
-      kernelInit: tf.initializers.randomNormal({mean:0, stddev:0.02}),
-      biasInit: tf.initializers.randomNormal({mean:0, stddev:0.02})
-    };
+    p1.yArr = buildTarget(xs, which, P1_K_FIXED, domain);
+    p1.xT = tf.tensor1d(p1.xArr, "float32");
+    p1.yT = tf.tensor1d(p1.yArr, "float32");
   }
 
   function p1BuildModel() {
-    if (p1.model) p1.model.dispose();
     const P = parseInt(el("p1P").value, 10);
-
-    const inits = p1InitKernelBias(P);
-
-    p1.model = tf.sequential();
-    p1.model.add(tf.layers.dense({
-      inputShape: [1],
-      units: P,
-      activation: "sigmoid",
-      kernelInitializer: inits.kernelInit,
-      biasInitializer: inits.biasInit
-    }));
-    p1.model.add(tf.layers.dense({
-      units: 1,
-      activation: "linear",
-      kernelInitializer: inits.kernelInit,
-      biasInitializer: inits.biasInit
-    }));
-
-    const lrExp = parseFloat(el("p1LR").value);
-    const lr = Math.pow(10, lrExp);
+    p1.w = tf.variable(xavier1D(P));
+    p1.b = tf.variable(tf.zeros([P], "float32"));
+    p1.v = tf.variable(xavier1D(P));
+    p1.v0 = tf.variable(xavierScalarLike());
+    const lr = Math.pow(10, parseFloat(el("p1LR").value));
     p1.opt = tf.train.adam(lr);
-
-    p1.epoch = 0;
   }
 
-  function msePlusWD(model, pred, yTrue, wd) {
+  function p1ForwardAll() {
     return tf.tidy(() => {
-      const mse = tf.mean(tf.square(tf.sub(pred, yTrue)));
-      if (wd <= 0) return mse;
-      let reg = tf.scalar(0);
-      for (const w of model.trainableWeights) {
-        const isBias = w.name.toLowerCase().includes("bias");
-        if (!isBias) reg = tf.add(reg, tf.sum(tf.square(w.read())));
-      }
+      const xCol = p1.xT.reshape([-1, 1]);   // [N,1]
+      const wRow = p1.w.reshape([1, -1]);    // [1,P]
+      const bRow = p1.b.reshape([1, -1]);    // [1,P]
+      const z = tf.sigmoid(tf.add(tf.mul(xCol, wRow), bRow));   // [N,P]
+      const contrib = tf.mul(z, p1.v.reshape([1, -1]));         // [N,P]
+      const yhat = tf.add(tf.sum(contrib, 1), p1.v0);           // [N]
+      return {
+        z: tf.clone(z),
+        contrib: tf.clone(contrib),
+        yhat: tf.clone(yhat)
+      };
+    });
+  }
+
+  function p1LossTensor(wd) {
+    return tf.tidy(() => {
+      const xCol = p1.xT.reshape([-1, 1]);
+      const z = tf.sigmoid(tf.add(tf.mul(xCol, p1.w.reshape([1, -1])), p1.b.reshape([1, -1])));
+      const contrib = tf.mul(z, p1.v.reshape([1, -1]));
+      const yhat = tf.add(tf.sum(contrib, 1), p1.v0);
+      const mse = tf.mean(tf.square(tf.sub(yhat, p1.yT)));
+      if (wd <= 0) return tf.clone(mse);
+      const reg = tf.addN([
+        tf.sum(tf.square(p1.w)),
+        tf.sum(tf.square(p1.b)),
+        tf.sum(tf.square(p1.v))
+      ]);
       return tf.add(mse, tf.mul(tf.scalar(wd), reg));
     });
   }
 
   async function p1TrainSteps(steps) {
+    if (!p1.w || !p1.b || !p1.v || !p1.v0 || !p1.xT || !p1.yT || !p1.opt) {
+      throw new Error("Part 1 model is not initialised.");
+    }
     const wd = parseFloat(el("p1WD").value);
-    for (let s = 0; s < steps; s++) {
-      const lossVal = await p1.opt.minimize(() => {
-        const pred = p1.model.predict(p1.xT);
-        return msePlusWD(p1.model, pred, p1.yT, wd);
-      }, true).data();
 
-      p1.lossHist.push(lossVal[0]);
+    for (let s = 0; s < steps; s++) {
+      const lossTensor = p1.opt.minimize(() => p1LossTensor(wd), true, [p1.w, p1.b, p1.v, p1.v0]);
+      if (!lossTensor) throw new Error("Part 1 optimiser returned null.");
+
+      const lossVal = (await lossTensor.data())[0];
+      lossTensor.dispose();
+
+      p1.lossHist.push(lossVal);
       if (p1.lossHist.length > p1.lossMax) p1.lossHist.shift();
       p1.epoch += 1;
 
-      if ((s % 25) === 0) await tf.nextFrame();
+      if ((s % 20) === 0) await tf.nextFrame();
     }
   }
 
-  async function p1Predict() {
-    const yPredT = tf.tidy(() => p1.model.predict(p1.xT));
-    const yPred = await yPredT.data();
-    yPredT.dispose();
-    return Array.from(yPred);
-  }
-
-  function p1GetParams() {
-    const [dense1, dense2] = p1.model.layers;
-    const [W1, b1] = dense1.getWeights(); // W1 [1,P], b1 [P]
-    const [W2, b2] = dense2.getWeights(); // W2 [P,1], b2 [1]
-    return { W1, b1, W2, b2 };
-  }
-
-  // Part 1 canvases
-  const p1FitC = el("p1Fit"), p1LossC = el("p1Loss"), p1BasisC = el("p1Basis");
-  const p1FitX = p1FitC.getContext("2d"), p1LossX = p1LossC.getContext("2d"), p1BasisX = p1BasisC.getContext("2d");
+  const p1FitC = el("p1Fit");
+  const p1BasisC = el("p1Basis");
+  const p1LossC = el("p1Loss");
+  const p1FitX = p1FitC.getContext("2d");
+  const p1BasisX = p1BasisC.getContext("2d");
+  const p1LossX = p1LossC.getContext("2d");
 
   async function p1DrawFit() {
     clear(p1FitX, p1FitC.width, p1FitC.height);
-    if (p1.xArr.length === 0) return;
+    if (!p1.xArr.length) return;
 
-    const yPred = p1.model ? await p1Predict() : null;
-    const yAll = yPred ? p1.yArr.concat(yPred) : p1.yArr.slice();
+    const out = p1ForwardAll();
+    const yPred = Array.from(await out.yhat.data());
+    out.z.dispose();
+    out.contrib.dispose();
+    out.yhat.dispose();
+
+    const yAll = p1.yArr.concat(yPred);
     const [yMin, yMax] = niceBounds(yAll);
     const xMin = p1.xArr[0], xMax = p1.xArr[p1.xArr.length - 1];
 
     drawAxes(p1FitX, p1FitC.width, p1FitC.height, xMin, xMax, yMin, yMax);
     drawPolyline(p1FitX, p1.xArr, p1.yArr, p1FitC.width, p1FitC.height, xMin, xMax, yMin, yMax, "#000", 1.6);
     drawDots(p1FitX, p1.xArr, p1.yArr, p1FitC.width, p1FitC.height, xMin, xMax, yMin, yMax, "#000", 2.5);
-    if (yPred) drawPolyline(p1FitX, p1.xArr, yPred, p1FitC.width, p1FitC.height, xMin, xMax, yMin, yMax, "#d11", 2.4);
+    drawPolyline(p1FitX, p1.xArr, yPred, p1FitC.width, p1FitC.height, xMin, xMax, yMin, yMax, "#d11", 2.4);
 
     p1FitX.save();
     p1FitX.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
@@ -562,28 +623,30 @@
       p1LossX.restore();
       return;
     }
+
     const xs = [], ys = [];
     for (let i = 0; i < p1.lossHist.length; i++) {
       xs.push(i);
       ys.push(Math.log10(Math.max(p1.lossHist[i], 1e-12)));
     }
+
     const [yMin, yMax] = niceBounds(ys);
     const xMin = 0, xMax = Math.max(1, xs[xs.length - 1]);
 
     drawAxes(p1LossX, p1LossC.width, p1LossC.height, xMin, xMax, yMin, yMax);
     drawPolyline(p1LossX, xs, ys, p1LossC.width, p1LossC.height, xMin, xMax, yMin, yMax, "#1a1a1a", 2.0);
 
-    const last = ys[ys.length - 1];
     p1LossX.save();
     p1LossX.fillStyle = "#444";
     p1LossX.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    p1LossX.fillText(`last log10(MSE): ${last.toFixed(3)}`, 44, 18);
+    p1LossX.fillText(`last log10(MSE): ${ys[ys.length - 1].toFixed(3)}`, 44, 18);
     p1LossX.restore();
   }
 
   async function p1DrawBasis() {
     clear(p1BasisX, p1BasisC.width, p1BasisC.height);
-    if (!p1.model) {
+
+    if (!p1.w || !p1.b || !p1.v || !p1.v0) {
       p1BasisX.save();
       p1BasisX.fillStyle = "#444";
       p1BasisX.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
@@ -592,70 +655,79 @@
       return;
     }
 
-    const { W1, b1, W2, b2 } = p1GetParams();
-    const P = b1.shape[0];
+    const out = p1ForwardAll();
+    const basisArr = await out.z.array();
+    const contribArr = await out.contrib.array();
+    out.yhat.dispose();
+    out.z.dispose();
+    out.contrib.dispose();
 
-    const { cArr, v0Val } = await tf.tidy(async () => {
-      const w = W1.squeeze();     // [P]
-      const b = b1;              // [P]
-      const v = W2.squeeze();     // [P]
-      const v0 = b2.squeeze();    // scalar
-      const x = p1.xT.squeeze();  // [N]
-      const xCol = x.reshape([-1, 1]);
-      const wRow = w.reshape([1, -1]);
-      const bRow = b.reshape([1, -1]);
-      const z = tf.sigmoid(tf.add(tf.mul(xCol, wRow), bRow)); // [N,P]
-      const vRow = v.reshape([1, -1]);
-      const c = tf.mul(z, vRow); // [N,P]
-      const cArr = await c.array();
-      const v0Val = (await v0.data())[0];
-      return { cArr, v0Val };
-    });
+    const wArr = Array.from(await p1.w.data());
+    const bArr = Array.from(await p1.b.data());
+    const vArr = Array.from(await p1.v.data());
+    const v0Val = (await p1.v0.data())[0];
 
-    W1.dispose(); b1.dispose(); W2.dispose(); b2.dispose();
-
-    const all = [];
-    for (let i = 0; i < cArr.length; i++) {
-      all.push(v0Val);
-      for (let j = 0; j < P; j++) all.push(cArr[i][j]);
-    }
-    const [yMin, yMax] = niceBounds(all);
+    const P = wArr.length;
     const xMin = p1.xArr[0], xMax = p1.xArr[p1.xArr.length - 1];
-    drawAxes(p1BasisX, p1BasisC.width, p1BasisC.height, xMin, xMax, yMin, yMax);
 
-    const biasLine = p1.xArr.map(() => v0Val);
-    drawPolyline(p1BasisX, p1.xArr, biasLine, p1BasisC.width, p1BasisC.height, xMin, xMax, yMin, yMax, "#000", 2.4);
+    const topRect = { x:0, y:0, w:p1BasisC.width, h:Math.floor(p1BasisC.height / 2), pad:34 };
+    const botRect = { x:0, y:Math.floor(p1BasisC.height / 2), w:p1BasisC.width, h:Math.ceil(p1BasisC.height / 2), pad:34 };
+
+    drawAxesInRect(p1BasisX, topRect, xMin, xMax, 0, 1);
+
+    const allBottom = [];
+    for (let i = 0; i < contribArr.length; i++) {
+      allBottom.push(v0Val);
+      for (let j = 0; j < P; j++) allBottom.push(contribArr[i][j]);
+    }
+    const [yMinB, yMaxB] = niceBounds(allBottom);
+    drawAxesInRect(p1BasisX, botRect, xMin, xMax, yMinB, yMaxB);
 
     for (let j = 0; j < P; j++) {
-      const ys = cArr.map(row => row[j]);
-      const g = 35 + Math.floor(190 * (j / Math.max(1, P - 1)));
-      const col = `rgb(${g},${g},${g})`;
-      drawPolyline(p1BasisX, p1.xArr, ys, p1BasisC.width, p1BasisC.height, xMin, xMax, yMin, yMax, col, 1.5);
+      const col = colourForIndex(j, P);
+      const basisY = basisArr.map(row => row[j]);
+      const contribY = contribArr.map(row => row[j]);
+
+      drawPolylineInRect(p1BasisX, p1.xArr, basisY, topRect, xMin, xMax, 0, 1, col, 1.8);
+      drawPolylineInRect(p1BasisX, p1.xArr, contribY, botRect, xMin, xMax, yMinB, yMaxB, col, 1.8);
     }
 
+    const biasLine = p1.xArr.map(() => v0Val);
+    drawPolylineInRect(p1BasisX, p1.xArr, biasLine, botRect, xMin, xMax, yMinB, yMaxB, "#000", 2.8);
+
     p1BasisX.save();
+    p1BasisX.fillStyle = "#222";
+    p1BasisX.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    p1BasisX.fillText("Hidden bases σ(wᵢx+bᵢ)", 44, 18);
+    p1BasisX.fillText("Output terms vᵢσ(wᵢx+bᵢ) and bias v₀", 44, topRect.h + 18);
+
+    p1BasisX.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    let txt = "";
+    const shown = Math.min(P, 6);
+    for (let j = 0; j < shown; j++) {
+      const knot = Math.abs(wArr[j]) > 1e-8 ? (-bArr[j] / wArr[j]) : NaN;
+      txt += `i=${j+1}: w=${wArr[j].toFixed(2)}  b=${bArr[j].toFixed(2)}  v=${vArr[j].toFixed(2)}  knot≈${isFinite(knot) ? knot.toFixed(2) : "∞"}   `;
+    }
     p1BasisX.fillStyle = "#444";
-    p1BasisX.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    p1BasisX.fillText(`v₀ is thick black. Each grey curve is vᵢ σ(wᵢ x + bᵢ). P=${P}`, 44, 18);
+    p1BasisX.fillText(txt, 44, p1BasisC.height - 8);
     p1BasisX.restore();
   }
 
   function p1UpdateStats() {
-    const lrExp = parseFloat(el("p1LR").value);
-    const lr = Math.pow(10, lrExp);
+    const lr = Math.pow(10, parseFloat(el("p1LR").value));
     const P = parseInt(el("p1P").value, 10);
     const wd = parseFloat(el("p1WD").value);
     const which = el("p1Target").value;
     const domain = el("p1Domain").value;
-    const K = parseInt(el("p1K").value, 10);
-    const paramCount = p1.model ? p1.model.countParams() : 0;
+    const paramCount = 3 * P + 1;
     const lastLoss = p1.lossHist.length ? p1.lossHist[p1.lossHist.length - 1] : NaN;
     const lastLog = isFinite(lastLoss) ? Math.log10(Math.max(lastLoss, 1e-12)) : NaN;
 
     el("p1Stats").textContent =
 `epoch: ${p1.epoch}
-target: ${which}    domain: ${domain}    K: ${K}
+target: ${which}    domain: ${domain}    fixed Fourier terms: ${P1_K_FIXED}
 P: ${P}    params: ${paramCount}
+initialiser: Xavier (fixed)
 learning rate: ${lr.toExponential(2)}    weight decay: ${wd.toFixed(4)}
 last MSE: ${isFinite(lastLoss) ? lastLoss.toExponential(3) : "n/a"}
 last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
@@ -667,37 +739,59 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
     p1DrawLoss();
     p1UpdateStats();
 
-    // Gentle note for discontinuous targets
     const which = el("p1Target").value;
-    const note = (which === "square" || which === "saw")
-      ? "Note: discontinuities typically produce ringing near the jump (Gibbs-like behaviour). Increase P and/or add weight decay to see trade-offs."
+    el("p1Note").textContent =
+      (which === "square" || which === "saw")
+      ? "Note: discontinuities typically produce ringing near the jump. Increase P and/or add weight decay to see the trade-off."
       : "";
-    el("p1Note").textContent = note;
   }
 
   async function p1Initialise() {
-    p1.running = false;
+    clearError("p1Error");
+    p1StopLoop();
+    while (p1.busy) await sleep(10);
+
+    p1DisposeVars();
+    p1.lossHist = [];
+    p1.epoch = 0;
+
     p1BuildData();
     p1BuildModel();
-    p1.lossHist = [];
     await p1DrawAll();
   }
 
   async function p1Step() {
-    if (!p1.model) return;
-    const eps = parseInt(el("p1Eps").value, 10);
-    await p1TrainSteps(eps);
-    await p1DrawAll();
+    clearError("p1Error");
+    if (p1.busy) return;
+    p1.busy = true;
+    try {
+      if (!p1.w) throw new Error("Please click Initialise first.");
+      const eps = parseInt(el("p1Eps").value, 10);
+      await p1TrainSteps(eps);
+      await p1DrawAll();
+    } catch (err) {
+      reportError("p1Error", err);
+      throw err;
+    } finally {
+      p1.busy = false;
+    }
   }
 
   async function p1Loop() {
     if (!p1.running) return;
-    await p1Step();
-    requestAnimationFrame(p1Loop);
+    try {
+      await p1Step();
+    } catch (_) {
+      p1StopLoop();
+      return;
+    }
+    if (p1.running) {
+      p1.timer = setTimeout(p1Loop, 0);
+    }
   }
 
   // -----------------------------
-  // Part 2: shallow vs deep
+  // Part 2 left as layers model
   // -----------------------------
   const p2 = {
     shallow: null,
@@ -712,41 +806,48 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
     epoch: 0,
     lossS: [],
     lossD: [],
-    lossMax: 900
+    lossMax: 900,
+    timer: null,
+    busy: false
   };
 
-  function p2DisposeTensors() {
-    if (p2.xT) p2.xT.dispose();
-    if (p2.yT) p2.yT.dispose();
-    p2.xT = null; p2.yT = null;
+  function p2StopLoop() {
+    p2.running = false;
+    if (p2.timer !== null) {
+      clearTimeout(p2.timer);
+      p2.timer = null;
+    }
   }
 
   function p2BuildData() {
-    p2DisposeTensors();
+    safeDispose([p2.xT, p2.yT]);
+
     const N = parseInt(el("p2N").value, 10);
     const domain = el("p2Domain").value;
     let xs;
-    if (domain === "0to2pi") xs = linspace(0, 2*Math.PI, N);
+    if (domain === "0to2pi") xs = linspace(0, 2 * Math.PI, N);
     else xs = linspace(-1, 1, N);
 
     const which = el("p2Target").value;
     const K = parseInt(el("p2K").value, 10);
 
-    // For Fourier targets in Part 2, map to [0,1] if needed
     let y;
     if (which === "square" || which === "triangle") {
       const t = (domain === "0to2pi")
-        ? xs.map(x => x / (2*Math.PI))
+        ? xs.map(x => x / (2 * Math.PI))
         : xs.map(x => (x + 1) / 2);
       if (which === "square") y = squareFourier(t, K, 1.0, 1.0);
       else y = triangleFourier(t, K, 1.0, 1.0);
-    } else if (which === "sincos") y = sincos(xs);
-    else if (which === "gaussmix") y = gaussMix(domain === "0to2pi" ? xs.map(x => (x/Math.PI)-1) : xs);
-    else y = sinprod(xs);
+    } else if (which === "sincos") {
+      y = sincos(xs);
+    } else if (which === "gaussmix") {
+      y = gaussMix(domain === "0to2pi" ? xs.map(x => (x / Math.PI) - 1) : xs);
+    } else {
+      y = sinprod(xs);
+    }
 
     p2.xArr = xs;
     p2.yArr = y;
-
     p2.xT = tf.tensor2d(p2.xArr, [p2.xArr.length, 1], "float32");
     p2.yT = tf.tensor2d(p2.yArr, [p2.yArr.length, 1], "float32");
   }
@@ -758,41 +859,31 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
   }
 
   function p2CountParamsForDeep(W1, W2) {
-    // Deep: 1->W1, W1->W2, W2->1, with biases
-    // (1*W1 + W1) + (W1*W2 + W2) + (W2*1 + 1)
-    return (1*W1 + W1) + (W1*W2 + W2) + (W2*1 + 1);
+    return (1 * W1 + W1) + (W1 * W2 + W2) + (W2 * 1 + 1);
   }
 
   function p2AutoMatchShallow() {
-    const match = el("p2Match").value;
-    if (match !== "on") return;
-
+    if (el("p2Match").value !== "on") return;
     const W1 = parseInt(el("p2W1").value, 10);
     const W2 = parseInt(el("p2W2").value, 10);
     const deepParams = p2CountParamsForDeep(W1, W2);
-
-    // Shallow: 1->H->1: (1*H + H) + (H*1 + 1) = 3H + 1
-    // Solve H ≈ (deepParams - 1)/3
     const H = Math.max(2, Math.round((deepParams - 1) / 3));
     el("p2H").value = String(Math.min(256, H));
   }
 
   function p2BuildModels() {
-    if (p2.shallow) p2.shallow.dispose();
-    if (p2.deep) p2.deep.dispose();
+    safeDispose([p2.shallow, p2.deep]);
 
     const act = el("p2Act").value;
     const H = parseInt(el("p2H").value, 10);
     const W1 = parseInt(el("p2W1").value, 10);
     const W2 = parseInt(el("p2W2").value, 10);
 
-    // Shallow: 1 -> H -> 1
     p2.shallow = tf.sequential();
     p2.shallow.add(tf.layers.dense({ inputShape:[1], units:H }));
     p2.shallow.add(makeActivationLayer(act));
     p2.shallow.add(tf.layers.dense({ units:1 }));
 
-    // Deep: 1 -> W1 -> W2 -> 1
     p2.deep = tf.sequential();
     p2.deep.add(tf.layers.dense({ inputShape:[1], units:W1 }));
     p2.deep.add(makeActivationLayer(act));
@@ -800,60 +891,81 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
     p2.deep.add(makeActivationLayer(act));
     p2.deep.add(tf.layers.dense({ units:1 }));
 
-    const lrExp = parseFloat(el("p2LR").value);
-    const lr = Math.pow(10, lrExp);
+    const lr = Math.pow(10, parseFloat(el("p2LR").value));
     p2.optS = tf.train.adam(lr);
     p2.optD = tf.train.adam(lr);
-
     p2.epoch = 0;
+  }
+
+  function msePlusWD(model, pred, yTrue, wd) {
+    return tf.tidy(() => {
+      const mse = tf.mean(tf.square(tf.sub(pred, yTrue)));
+      if (wd <= 0) return mse;
+      let reg = tf.scalar(0);
+      for (const w of model.trainableWeights) {
+        const isBias = w.name.toLowerCase().includes("bias");
+        if (!isBias) reg = tf.add(reg, tf.sum(tf.square(w.read())));
+      }
+      return tf.add(mse, tf.mul(tf.scalar(wd), reg));
+    });
   }
 
   async function p2TrainSteps(steps) {
     const wd = parseFloat(el("p2WD").value);
+
     for (let s = 0; s < steps; s++) {
-      const lossS = await p2.optS.minimize(() => {
+      const lossST = p2.optS.minimize(() => {
         const pred = p2.shallow.predict(p2.xT);
         return msePlusWD(p2.shallow, pred, p2.yT, wd);
-      }, true).data();
-      const lossD = await p2.optD.minimize(() => {
+      }, true);
+
+      const lossDT = p2.optD.minimize(() => {
         const pred = p2.deep.predict(p2.xT);
         return msePlusWD(p2.deep, pred, p2.yT, wd);
-      }, true).data();
+      }, true);
 
-      p2.lossS.push(lossS[0]); if (p2.lossS.length > p2.lossMax) p2.lossS.shift();
-      p2.lossD.push(lossD[0]); if (p2.lossD.length > p2.lossMax) p2.lossD.shift();
+      const lossS = (await lossST.data())[0];
+      const lossD = (await lossDT.data())[0];
+      lossST.dispose();
+      lossDT.dispose();
+
+      p2.lossS.push(lossS);
+      p2.lossD.push(lossD);
+      if (p2.lossS.length > p2.lossMax) p2.lossS.shift();
+      if (p2.lossD.length > p2.lossMax) p2.lossD.shift();
 
       p2.epoch += 1;
-      if ((s % 25) === 0) await tf.nextFrame();
+      if ((s % 20) === 0) await tf.nextFrame();
     }
   }
 
   async function p2Predict(model) {
     const yPredT = tf.tidy(() => model.predict(p2.xT));
-    const yPred = await yPredT.data();
+    const out = Array.from(await yPredT.data());
     yPredT.dispose();
-    return Array.from(yPred);
+    return out;
   }
 
-  const p2FitC = el("p2Fit"), p2LossC = el("p2Loss");
-  const p2FitX = p2FitC.getContext("2d"), p2LossX = p2LossC.getContext("2d");
+  const p2FitC = el("p2Fit");
+  const p2LossC = el("p2Loss");
+  const p2FitX = p2FitC.getContext("2d");
+  const p2LossX = p2LossC.getContext("2d");
 
   async function p2DrawFit() {
     clear(p2FitX, p2FitC.width, p2FitC.height);
-    if (p2.xArr.length === 0) return;
+    if (!p2.xArr.length) return;
 
-    const yS = (p2.shallow) ? await p2Predict(p2.shallow) : null;
-    const yD = (p2.deep) ? await p2Predict(p2.deep) : null;
+    const yS = p2.shallow ? await p2Predict(p2.shallow) : [];
+    const yD = p2.deep ? await p2Predict(p2.deep) : [];
 
-    const all = p2.yArr.concat(yS || []).concat(yD || []);
+    const all = p2.yArr.concat(yS).concat(yD);
     const [yMin, yMax] = niceBounds(all);
     const xMin = p2.xArr[0], xMax = p2.xArr[p2.xArr.length - 1];
 
     drawAxes(p2FitX, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax);
-
     drawPolyline(p2FitX, p2.xArr, p2.yArr, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax, "#000", 2.0);
-    if (yS) drawPolyline(p2FitX, p2.xArr, yS, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax, "#1463ff", 2.2);
-    if (yD) drawPolyline(p2FitX, p2.xArr, yD, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax, "#d11", 2.2);
+    drawPolyline(p2FitX, p2.xArr, yS, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax, "#1463ff", 2.2);
+    drawPolyline(p2FitX, p2.xArr, yD, p2FitC.width, p2FitC.height, xMin, xMax, yMin, yMax, "#d11", 2.2);
 
     p2FitX.save();
     p2FitX.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
@@ -874,15 +986,14 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
       return;
     }
 
-    const xs = [];
-    const ysS = [];
-    const ysD = [];
+    const xs = [], ysS = [], ysD = [];
     const L = Math.min(p2.lossS.length, p2.lossD.length);
     for (let i = 0; i < L; i++) {
       xs.push(i);
       ysS.push(Math.log10(Math.max(p2.lossS[i], 1e-12)));
       ysD.push(Math.log10(Math.max(p2.lossD[i], 1e-12)));
     }
+
     const [yMin, yMax] = niceBounds(ysS.concat(ysD));
     const xMin = 0, xMax = Math.max(1, xs[xs.length - 1]);
 
@@ -893,20 +1004,17 @@ last log10(MSE): ${isFinite(lastLog) ? lastLog.toFixed(3) : "n/a"}`;
     p2LossX.save();
     p2LossX.fillStyle = "#444";
     p2LossX.font = "12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-    const lastS = ysS[ysS.length - 1], lastD = ysD[ysD.length - 1];
-    p2LossX.fillText(`last log10(MSE): shallow=${lastS.toFixed(3)}  deep=${lastD.toFixed(3)}`, 44, 18);
+    p2LossX.fillText(`last log10(MSE): shallow=${ysS[ysS.length - 1].toFixed(3)}  deep=${ysD[ysD.length - 1].toFixed(3)}`, 44, 18);
     p2LossX.restore();
   }
 
   function p2UpdateStats() {
-    const lrExp = parseFloat(el("p2LR").value);
-    const lr = Math.pow(10, lrExp);
+    const lr = Math.pow(10, parseFloat(el("p2LR").value));
     const wd = parseFloat(el("p2WD").value);
     const which = el("p2Target").value;
     const domain = el("p2Domain").value;
     const K = parseInt(el("p2K").value, 10);
     const act = el("p2Act").value;
-
     const H = parseInt(el("p2H").value, 10);
     const W1 = parseInt(el("p2W1").value, 10);
     const W2 = parseInt(el("p2W2").value, 10);
@@ -924,7 +1032,7 @@ activation: ${act}
 shallow: 1→${H}→1    params: ${pS}
 deep: 1→${W1}→${W2}→1    params: ${pD}
 learning rate: ${lr.toExponential(2)}    weight decay: ${wd.toFixed(4)}
-last MSE: shallow=${isFinite(lastS)?lastS.toExponential(3):"n/a"}   deep=${isFinite(lastD)?lastD.toExponential(3):"n/a"}`;
+last MSE: shallow=${isFinite(lastS) ? lastS.toExponential(3) : "n/a"}   deep=${isFinite(lastD) ? lastD.toExponential(3) : "n/a"}`;
   }
 
   async function p2DrawAll() {
@@ -934,41 +1042,63 @@ last MSE: shallow=${isFinite(lastS)?lastS.toExponential(3):"n/a"}   deep=${isFin
   }
 
   async function p2Initialise() {
-    p2.running = false;
+    clearError("p2Error");
+    p2StopLoop();
+    while (p2.busy) await sleep(10);
+
+    safeDispose([p2.xT, p2.yT, p2.shallow, p2.deep]);
+    p2.xT = null;
+    p2.yT = null;
+    p2.shallow = null;
+    p2.deep = null;
+    p2.optS = null;
+    p2.optD = null;
+    p2.lossS = [];
+    p2.lossD = [];
+    p2.epoch = 0;
+
     p2AutoMatchShallow();
     p2BuildData();
     p2BuildModels();
-    p2.lossS = [];
-    p2.lossD = [];
     await p2DrawAll();
   }
 
   async function p2Step() {
-    if (!p2.shallow || !p2.deep) return;
-    const eps = parseInt(el("p2Eps").value, 10);
-    await p2TrainSteps(eps);
-    await p2DrawAll();
+    clearError("p2Error");
+    if (p2.busy) return;
+    p2.busy = true;
+    try {
+      if (!p2.shallow || !p2.deep) throw new Error("Please click Initialise first.");
+      const eps = parseInt(el("p2Eps").value, 10);
+      await p2TrainSteps(eps);
+      await p2DrawAll();
+    } catch (err) {
+      reportError("p2Error", err);
+      throw err;
+    } finally {
+      p2.busy = false;
+    }
   }
 
   async function p2Loop() {
     if (!p2.running) return;
-    await p2Step();
-    requestAnimationFrame(p2Loop);
+    try {
+      await p2Step();
+    } catch (_) {
+      p2StopLoop();
+      return;
+    }
+    if (p2.running) {
+      p2.timer = setTimeout(p2Loop, 0);
+    }
   }
-
-  // -----------------------------
-  // UI glue
-  // -----------------------------
-  function el(id) { return document.getElementById(id); }
 
   function syncLabels() {
     el("p1NLab").textContent = el("p1N").value;
     el("p1PLab").textContent = el("p1P").value;
-    el("p1KLab").textContent = el("p1K").value;
     el("p1EpsLab").textContent = el("p1Eps").value;
     el("p1WDLab").textContent = Number(el("p1WD").value).toFixed(3);
-    const p1lr = Math.pow(10, Number(el("p1LR").value));
-    el("p1LRLab").textContent = p1lr.toExponential(2);
+    el("p1LRLab").textContent = Math.pow(10, Number(el("p1LR").value)).toExponential(2);
 
     el("p2NLab").textContent = el("p2N").value;
     el("p2HLab").textContent = el("p2H").value;
@@ -977,43 +1107,97 @@ last MSE: shallow=${isFinite(lastS)?lastS.toExponential(3):"n/a"}   deep=${isFin
     el("p2KLab").textContent = el("p2K").value;
     el("p2EpsLab").textContent = el("p2Eps").value;
     el("p2WDLab").textContent = Number(el("p2WD").value).toFixed(3);
-    const p2lr = Math.pow(10, Number(el("p2LR").value));
-    el("p2LRLab").textContent = p2lr.toExponential(2);
+    el("p2LRLab").textContent = Math.pow(10, Number(el("p2LR").value)).toExponential(2);
   }
 
-  function bindInputs(ids, fn) {
+  function bindInputs(ids, reinitFn=null) {
     for (const id of ids) {
-      el(id).addEventListener("input", () => { syncLabels(); if (fn) fn(); });
-      el(id).addEventListener("change", () => { syncLabels(); if (fn) fn(); });
+      el(id).addEventListener("input", () => { syncLabels(); });
+      el(id).addEventListener("change", async () => {
+        syncLabels();
+        if (reinitFn) {
+          try { await reinitFn(); } catch (err) { console.error(err); }
+        }
+      });
     }
   }
 
-  // Part 1 controls: changes that require reinit
-  bindInputs(["p1Target","p1Domain","p1N","p1P","p1LR","p1K","p1Init"], () => { p1Initialise(); });
-  // Part 1 controls that can be applied without reinit
-  bindInputs(["p1Eps","p1WD"], null);
-
-  el("p1InitBtn").addEventListener("click", async () => { await p1Initialise(); });
-  el("p1StartBtn").addEventListener("click", async () => { if (!p1.model) await p1Initialise(); p1.running = true; requestAnimationFrame(p1Loop); });
-  el("p1StopBtn").addEventListener("click", () => { p1.running = false; });
-  el("p1StepBtn").addEventListener("click", async () => { if (!p1.model) await p1Initialise(); await p1Step(); });
-  el("p1ResetLossBtn").addEventListener("click", async () => { p1.lossHist = []; p1DrawLoss(); p1UpdateStats(); });
-
-  // Part 2 controls: many changes require reinit
-  bindInputs(["p2Target","p2Domain","p2N","p2H","p2W1","p2W2","p2K","p2Act","p2LR","p2Match"], () => { p2Initialise(); });
+  bindInputs(["p1Target","p1Domain","p1N","p1P","p1LR","p1Eps","p1WD"], null);
+  bindInputs(["p2Target","p2Domain","p2N","p2H","p2W1","p2W2","p2K","p2Act","p2LR","p2Match"], p2Initialise);
   bindInputs(["p2Eps","p2WD"], null);
 
-  el("p2InitBtn").addEventListener("click", async () => { await p2Initialise(); });
-  el("p2StartBtn").addEventListener("click", async () => { if (!p2.shallow) await p2Initialise(); p2.running = true; requestAnimationFrame(p2Loop); });
-  el("p2StopBtn").addEventListener("click", () => { p2.running = false; });
-  el("p2StepBtn").addEventListener("click", async () => { if (!p2.shallow) await p2Initialise(); await p2Step(); });
-  el("p2ResetLossBtn").addEventListener("click", async () => { p2.lossS = []; p2.lossD = []; p2DrawLoss(); p2UpdateStats(); });
+  el("p1InitBtn").addEventListener("click", async () => {
+    try { await p1Initialise(); } catch (err) { reportError("p1Error", err); }
+  });
+  el("p1StartBtn").addEventListener("click", async () => {
+    try {
+      clearError("p1Error");
+      if (!p1.w) throw new Error("Please click Initialise first.");
+      if (p1.running) return;
+      p1.running = true;
+      p1Loop();
+    } catch (err) {
+      reportError("p1Error", err);
+    }
+  });
+  el("p1StopBtn").addEventListener("click", () => { p1StopLoop(); });
+  el("p1StepBtn").addEventListener("click", async () => {
+    try {
+      p1StopLoop();
+      await p1Step();
+    } catch (err) {
+      reportError("p1Error", err);
+    }
+  });
+  el("p1ResetLossBtn").addEventListener("click", () => {
+    p1.lossHist = [];
+    p1DrawLoss();
+    p1UpdateStats();
+  });
 
-  // Initial boot
+  el("p2InitBtn").addEventListener("click", async () => {
+    try { await p2Initialise(); } catch (err) { reportError("p2Error", err); }
+  });
+  el("p2StartBtn").addEventListener("click", async () => {
+    try {
+      clearError("p2Error");
+      if (!p2.shallow || !p2.deep) throw new Error("Please click Initialise first.");
+      if (p2.running) return;
+      p2.running = true;
+      p2Loop();
+    } catch (err) {
+      reportError("p2Error", err);
+    }
+  });
+  el("p2StopBtn").addEventListener("click", () => { p2StopLoop(); });
+  el("p2StepBtn").addEventListener("click", async () => {
+    try {
+      p2StopLoop();
+      await p2Step();
+    } catch (err) {
+      reportError("p2Error", err);
+    }
+  });
+  el("p2ResetLossBtn").addEventListener("click", () => {
+    p2.lossS = [];
+    p2.lossD = [];
+    p2DrawLoss();
+    p2UpdateStats();
+  });
+
+  window.addEventListener("error", (event) => {
+    reportError("p1Error", event.error || event.message);
+    reportError("p2Error", event.error || event.message);
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    reportError("p1Error", event.reason || "Unhandled promise rejection");
+    reportError("p2Error", event.reason || "Unhandled promise rejection");
+  });
+
   syncLabels();
-  p1Initialise();
-  p2Initialise();
-
+  p1Initialise().catch(err => reportError("p1Error", err));
+  p2Initialise().catch(err => reportError("p2Error", err));
 })();
 </script>
 </body>
