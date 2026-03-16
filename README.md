@@ -23,6 +23,7 @@ This file lists each top-level file in the repository with a short description o
 - `AND-NEURON.html`: HTML explanation/visualization of an AND neuron (logic neuron tutorial page).
 - `Assignment_2.ipynb`: Another assignment notebook (coursework / tutorial notebook).
 - `Attention_Kernels.ipynb`: Notebook exploring attention mechanisms and kernel interpretations.
+- `Attention_XOR.html`: Attention/Transformer based implementation of XOR classification (Demo).
 - `CPHHR.ipynb`: Notebook likely related to a course or project (CPHHR) — detailed content in notebook cells.
 - `DM_1_kNN.ipynb`: Notebook about k-NN (k-nearest neighbours) for data mining coursework.
 - `DSVC.ipynb`: Notebook demonstrating or explaining differentiable support vector clustering.
@@ -48,6 +49,7 @@ This file lists each top-level file in the repository with a short description o
 - `barebones_tsvm.ipynb`: Notebook showing a barebones Transductive SVM.
 - `barebones_tsvm_clean.ipynb`: Cleaned variant of the barebones TSVM notebook.
 - `barebones_tsvm_clean_moons.ipynb`: TSVM demo using moon-shaped dataset.
+- `bitgpt.html`: A minimal binary GPT implementation that also presents connections of Large Models with Finite State Automata and Turning Machines.
 - `barebones_tsvm_cleaned.ipynb`: Another cleaned variant of TSVM examples.
 - `brevitas.ipynb`: Notebook possibly demonstrating brevitas quantized models.
 - `clustering_pytorch.ipynb`: Notebook with clustering examples implemented in PyTorch.
