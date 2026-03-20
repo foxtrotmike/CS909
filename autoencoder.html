@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MNIST Autoencoder Latent Space Demo</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --accent: #2563eb;
+      --ok: #15803d;
+      --warn: #b45309;
+      --shadow: 0 10px 25px rgba(0,0,0,0.08);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1, h2, h3 { margin: 0 0 8px 0; }
+    p { margin: 0 0 12px 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .controls {
+      display: grid;
+      gap: 12px;
+    }
+    .row {
+      display: grid;
+      gap: 8px;
+    }
+    .row.two {
+      grid-template-columns: 1fr 1fr;
+    }
+    label {
+      font-size: 0.93rem;
+      color: var(--muted);
+    }
+    input[type="number"], input[type="range"], select, button {
+      width: 100%;
+    }
+    input[type="number"], select {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font-size: 0.96rem;
+    }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 0.98rem;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: #374151;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .small {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .status {
+      padding: 10px 12px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1d4ed8;
+      border-radius: 12px;
+      min-height: 44px;
+      white-space: pre-wrap;
+    }
+    .main {
+      display: grid;
+      gap: 18px;
+    }
+    .top-row {
+      display: grid;
+      grid-template-columns: minmax(540px, 1fr) 340px;
+      gap: 18px;
+      align-items: start;
+    }
+    .latent-holder {
+      position: relative;
+    }
+    canvas {
+      display: block;
+      max-width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: white;
+    }
+    #latentCanvas {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1.25 / 1;
+      cursor: crosshair;
+    }
+    #digitCanvas, #nearestCanvas {
+      width: 280px;
+      height: 280px;
+      image-rendering: pixelated;
+      margin: 0 auto;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.84rem;
+      color: var(--muted);
+      background: #f9fafb;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    .metric {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    .kbd {
+      font-family: monospace;
+      background: #eef2ff;
+      color: #3730a3;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .mono {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 0.86rem;
+      max-height: 260px;
+      overflow: auto;
+      padding: 10px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 12px;
+      white-space: pre-wrap;
+    }
+    .image-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      justify-items: center;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .top-row { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>MNIST autoencoder with interactive latent space</h1>
+    <p>
+      This browser demo trains a deep autoencoder in TensorFlow.js, projects MNIST digits into a 2D latent space,
+      and lets you click anywhere in that space to decode a generated digit. A clicked point does not need to come
+      from the training set.
+    </p>
+	<p>
+	(c) Fayyaz Minhas.
+	</p>
+
+    <div class="grid">
+      <div class="panel controls">
+        <div>
+          <h2>Controls</h2>
+          <p class="small">The network mirrors your PyTorch structure: 784 → 1000 → 500 → 250 → 2 and back again.</p>
+        </div>
+
+        <div class="row two">
+          <div>
+            <label for="trainCount">Training examples</label>
+            <input id="trainCount" type="number" min="1000" max="12000" step="500" value="6000" />
+          </div>
+          <div>
+            <label for="testCount">Display examples</label>
+            <input id="testCount" type="number" min="500" max="4000" step="250" value="2000" />
+          </div>
+        </div>
+
+        <div class="row two">
+          <div>
+            <label for="epochs">Epochs</label>
+            <input id="epochs" type="number" min="1" max="30" step="1" value="8" />
+          </div>
+          <div>
+            <label for="batchSize">Batch size</label>
+            <input id="batchSize" type="number" min="16" max="256" step="16" value="128" />
+          </div>
+        </div>
+
+        <div class="row two">
+          <div>
+            <label for="learningRate">Learning rate</label>
+            <input id="learningRate" type="number" min="0.0001" max="0.01" step="0.0001" value="0.001" />
+          </div>
+          <div>
+            <label for="pointSize">Scatter size</label>
+            <input id="pointSize" type="number" min="1" max="6" step="1" value="2" />
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="noiseScale">Latent perturbation scale for sample generation: <span id="noiseLabel">0.50</span></label>
+          <input id="noiseScale" type="range" min="0" max="2" step="0.05" value="0.5" />
+        </div>
+
+        <div class="row two">
+          <button id="loadBtn" class="secondary">1. Load MNIST</button>
+          <button id="trainBtn" disabled>2. Train autoencoder</button>
+        </div>
+        <div class="row two">
+          <button id="embedBtn" disabled>3. Compute 2D embeddings</button>
+          <button id="sampleBtn" disabled>Generate from random latent point</button>
+        </div>
+
+        <div>
+          <h3>Status</h3>
+          <div id="status" class="status">Load data to begin.</div>
+        </div>
+
+        <div>
+          <h3>How to use it</h3>
+          <p class="small">
+            After training, click inside the latent plot. The decoder will generate a digit from that 2D location.
+            The demo also shows the nearest embedded test digit so you can compare the generated image to nearby data.
+          </p>
+        </div>
+
+        <div>
+          <h3>Debug log</h3>
+          <div id="log" class="mono"></div>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="cards">
+          <div class="panel">
+            <div class="small">Training loss</div>
+            <div id="lossMetric" class="metric">-</div>
+          </div>
+          <div class="panel">
+            <div class="small">Displayed embeddings</div>
+            <div id="countMetric" class="metric">-</div>
+          </div>
+          <div class="panel">
+            <div class="small">Clicked latent coordinate</div>
+            <div id="coordMetric" class="metric">-</div>
+          </div>
+        </div>
+
+        <div class="top-row">
+          <div class="panel latent-holder">
+            <h2>2D latent space</h2>
+            <p class="small">Coloured by true MNIST class. Click anywhere to decode from that latent coordinate.</p>
+            <canvas id="latentCanvas" width="900" height="720"></canvas>
+            <div id="latentInfo" class="small" style="margin-top:10px;">No embeddings yet.</div>
+            <div id="legend" class="legend"></div>
+          </div>
+
+          <div class="panel">
+            <h2>Decoded image from selected latent point</h2>
+            <div class="image-grid">
+              <canvas id="digitCanvas" width="280" height="280"></canvas>
+              <div id="generatedLabel" class="small">No generated image yet.</div>
+              <h3>Nearest embedded test digit</h3>
+              <canvas id="nearestCanvas" width="280" height="280"></canvas>
+              <div id="nearestLabel" class="small">No nearby test point selected yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Notes</h2>
+          <p class="small">
+            This is a vanilla autoencoder, not a VAE. So the latent space is learned only through reconstruction.
+            That means some regions may decode into blurrier or less digit-like outputs, especially far from the training manifold.
+          </p>
+          <p class="small">
+            To keep the demo responsive in the browser, it trains on a subset of MNIST rather than the full dataset by default.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const IMAGE_SIZE = 784;
+    const NUM_CLASSES = 10;
+    const MNIST_IMAGES_SPRITE_PATH = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_images.png';
+    const MNIST_LABELS_PATH = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_labels_uint8';
+    const NUM_DATASET_ELEMENTS = 65000;
+    const NUM_TRAIN_ELEMENTS = 55000;
+    const IMG_W = 28;
+    const IMG_H = 28;
+    const colours = ['#ef4444','#f97316','#eab308','#84cc16','#22c55e','#14b8a6','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+    const state = {
+      dataset: null,
+      model: null,
+      encoder: null,
+      decoder: null,
+      globalMean: null,
+      trainXs: null,
+      trainLabels: null,
+      testXs: null,
+      testLabels: null,
+      embeddings: null,
+      embeddingLabels: null,
+      embeddingImages: null,
+      latentBounds: null,
+      lastLoss: null,
+      selectedLatent: null,
+      selectedIndex: null,
+      isReady: false,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $('status');
+    const logEl = $('log');
+    const latentCanvas = $('latentCanvas');
+    const latentCtx = latentCanvas.getContext('2d');
+    const digitCanvas = $('digitCanvas');
+    const nearestCanvas = $('nearestCanvas');
+    const noiseScaleEl = $('noiseScale');
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function log(msg) {
+      const stamp = new Date().toLocaleTimeString();
+      logEl.textContent += `[${stamp}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    window.addEventListener('error', (e) => {
+      log(`ERROR: ${e.message} at ${e.filename}:${e.lineno}`);
+    });
+
+    window.addEventListener('unhandledrejection', (e) => {
+      log(`PROMISE ERROR: ${e.reason}`);
+    });
+
+    class MnistData {
+      constructor() {
+        this.shuffledTrainIndex = 0;
+        this.shuffledTestIndex = 0;
+      }
+
+      async load() {
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const imgRequest = new Promise((resolve, reject) => {
+          img.crossOrigin = '';
+          img.onload = () => {
+            img.width = img.naturalWidth;
+            img.height = img.naturalHeight;
+
+            const datasetBytesBuffer = new ArrayBuffer(NUM_DATASET_ELEMENTS * IMAGE_SIZE * 4);
+            const chunkSize = 5000;
+            canvas.width = img.width;
+            canvas.height = chunkSize;
+
+            for (let i = 0; i < NUM_DATASET_ELEMENTS / chunkSize; i++) {
+              const datasetBytesView = new Float32Array(
+                datasetBytesBuffer,
+                i * IMAGE_SIZE * chunkSize * 4,
+                IMAGE_SIZE * chunkSize
+              );
+              ctx.drawImage(
+                img,
+                0,
+                i * chunkSize,
+                img.width,
+                chunkSize,
+                0,
+                0,
+                img.width,
+                chunkSize
+              );
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              for (let j = 0; j < imageData.data.length / 4; j++) {
+                datasetBytesView[j] = imageData.data[j * 4] / 255;
+              }
+            }
+
+            this.datasetImages = new Float32Array(datasetBytesBuffer);
+            resolve();
+          };
+          img.onerror = reject;
+          img.src = MNIST_IMAGES_SPRITE_PATH;
+        });
+
+        const labelsRequest = fetch(MNIST_LABELS_PATH);
+        const [, labelsResponse] = await Promise.all([imgRequest, labelsRequest]);
+
+        this.datasetLabels = new Uint8Array(await labelsResponse.arrayBuffer());
+
+        this.trainIndices = tf.util.createShuffledIndices(NUM_TRAIN_ELEMENTS);
+        this.testIndices = tf.util.createShuffledIndices(NUM_DATASET_ELEMENTS - NUM_TRAIN_ELEMENTS);
+
+        this.trainImages = this.datasetImages.slice(0, IMAGE_SIZE * NUM_TRAIN_ELEMENTS);
+        this.testImages = this.datasetImages.slice(IMAGE_SIZE * NUM_TRAIN_ELEMENTS);
+        this.trainLabels = this.datasetLabels.slice(0, NUM_CLASSES * NUM_TRAIN_ELEMENTS);
+        this.testLabels = this.datasetLabels.slice(NUM_CLASSES * NUM_TRAIN_ELEMENTS);
+      }
+
+      getTrainData(numExamples) {
+        return this.getData_(true, numExamples);
+      }
+
+      getTestData(numExamples) {
+        return this.getData_(false, numExamples);
+      }
+
+      getData_(isTrain, numExamples) {
+        const images = isTrain ? this.trainImages : this.testImages;
+        const labels = isTrain ? this.trainLabels : this.testLabels;
+        const indices = isTrain ? this.trainIndices : this.testIndices;
+        let idx = isTrain ? this.shuffledTrainIndex : this.shuffledTestIndex;
+
+        const xsBuffer = new Float32Array(numExamples * IMAGE_SIZE);
+        const labelsBuffer = new Uint8Array(numExamples);
+
+        for (let i = 0; i < numExamples; i++) {
+          const j = indices[idx++ % indices.length];
+          const image = images.slice(j * IMAGE_SIZE, j * IMAGE_SIZE + IMAGE_SIZE);
+          xsBuffer.set(image, i * IMAGE_SIZE);
+          const oneHot = labels.slice(j * NUM_CLASSES, j * NUM_CLASSES + NUM_CLASSES);
+          labelsBuffer[i] = oneHot.indexOf(1);
+        }
+
+        if (isTrain) this.shuffledTrainIndex = idx;
+        else this.shuffledTestIndex = idx;
+
+        const xs = tf.tensor2d(xsBuffer, [numExamples, IMAGE_SIZE]);
+        const labelTensor = tf.tensor1d(labelsBuffer, 'int32');
+        return { xs, labels: labelTensor };
+      }
+    }
+
+    function buildModel(learningRate) {
+      const input = tf.input({shape: [IMAGE_SIZE]});
+      const e1 = tf.layers.dense({units: 1000, activation: 'relu'}).apply(input);
+      const e2 = tf.layers.dense({units: 500, activation: 'relu'}).apply(e1);
+      const e3 = tf.layers.dense({units: 250, activation: 'relu'}).apply(e2);
+      const latent = tf.layers.dense({units: 2, name: 'latent'}).apply(e3);
+      const d1 = tf.layers.dense({units: 250, activation: 'relu'}).apply(latent);
+      const d2 = tf.layers.dense({units: 500, activation: 'relu'}).apply(d1);
+      const d3 = tf.layers.dense({units: 1000, activation: 'relu'}).apply(d2);
+      const output = tf.layers.dense({units: IMAGE_SIZE}).apply(d3);
+
+      const model = tf.model({inputs: input, outputs: output});
+      model.compile({
+        optimizer: tf.train.adam(learningRate),
+        loss: 'meanSquaredError'
+      });
+
+      const encoder = tf.model({inputs: input, outputs: latent});
+      const latentInput = tf.input({shape: [2]});
+      let started = false;
+      let x = latentInput;
+      for (const layer of model.layers) {
+        if (layer.name === 'latent') {
+          started = true;
+          continue;
+        }
+        if (started) x = layer.apply(x);
+      }
+      const decoder = tf.model({inputs: latentInput, outputs: x});
+      return { model, encoder, decoder };
+    }
+
+    async function loadData() {
+      setStatus('Loading MNIST sprite data...');
+      $('loadBtn').disabled = true;
+      try {
+        state.dataset = new MnistData();
+        await state.dataset.load();
+        log('MNIST sprite and labels loaded successfully.');
+
+        const trainCount = parseInt($('trainCount').value, 10);
+        const testCount = parseInt($('testCount').value, 10);
+
+        tf.dispose([state.trainXs, state.trainLabels, state.testXs, state.testLabels, state.globalMean]);
+        const train = state.dataset.getTrainData(trainCount);
+        const test = state.dataset.getTestData(testCount);
+
+        state.globalMean = train.xs.mean(0);
+        state.trainXs = train.xs.sub(state.globalMean);
+        state.testXs = test.xs.sub(state.globalMean);
+        state.trainLabels = train.labels;
+        state.testLabels = test.labels;
+
+        train.xs.dispose();
+        test.xs.dispose();
+
+        setStatus(`Loaded ${trainCount} training and ${testCount} display examples. Ready to train.`);
+        $('trainBtn').disabled = false;
+        $('countMetric').textContent = testCount.toString();
+        drawPlaceholder(latentCanvas, 'Latent plot will appear here after embedding.');
+        drawPlaceholder(digitCanvas, 'Generated');
+        drawPlaceholder(nearestCanvas, 'Nearest');
+      } catch (err) {
+        log(`Failed to load data: ${err.stack || err}`);
+        setStatus('Could not load MNIST data. Check the debug log.');
+      } finally {
+        $('loadBtn').disabled = false;
+      }
+    }
+
+    async function trainModel() {
+      if (!state.trainXs) {
+        setStatus('Please load the data first.');
+        return;
+      }
+      $('trainBtn').disabled = true;
+      $('embedBtn').disabled = true;
+      $('sampleBtn').disabled = true;
+      setStatus('Building and training the model...');
+
+      try {
+        tf.dispose([state.model, state.encoder, state.decoder]);
+        const learningRate = parseFloat($('learningRate').value);
+        const built = buildModel(learningRate);
+        state.model = built.model;
+        state.encoder = built.encoder;
+        state.decoder = built.decoder;
+        log('Model built successfully.');
+
+        const epochs = parseInt($('epochs').value, 10);
+        const batchSize = parseInt($('batchSize').value, 10);
+
+        await state.model.fit(state.trainXs, state.trainXs, {
+          epochs,
+          batchSize,
+          shuffle: true,
+          callbacks: {
+            onEpochEnd: async (epoch, logs) => {
+              state.lastLoss = logs.loss;
+              $('lossMetric').textContent = logs.loss.toFixed(5);
+              setStatus(`Training epoch ${epoch + 1}/${epochs} complete. Loss = ${logs.loss.toFixed(5)}`);
+              log(`Epoch ${epoch + 1}/${epochs}: loss = ${logs.loss.toFixed(6)}`);
+              await tf.nextFrame();
+            }
+          }
+        });
+
+        setStatus('Training complete. You can now compute embeddings.');
+        $('embedBtn').disabled = false;
+        $('sampleBtn').disabled = false;
+      } catch (err) {
+        log(`Training failed: ${err.stack || err}`);
+        setStatus('Training failed. Check the debug log.');
+      } finally {
+        $('trainBtn').disabled = false;
+      }
+    }
+
+    async function computeEmbeddings() {
+      if (!state.encoder || !state.testXs) {
+        setStatus('Train the model first.');
+        return;
+      }
+      $('embedBtn').disabled = true;
+      setStatus('Computing 2D embeddings...');
+      try {
+        const embeddingsTensor = state.encoder.predict(state.testXs);
+        const embeddings = await embeddingsTensor.array();
+        state.embeddings = embeddings;
+        state.embeddingLabels = Array.from(await state.testLabels.data());
+        state.embeddingImages = await state.testXs.array();
+        embeddingsTensor.dispose();
+
+        const xs = embeddings.map(p => p[0]);
+        const ys = embeddings.map(p => p[1]);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const padX = (maxX - minX || 1) * 0.08;
+        const padY = (maxY - minY || 1) * 0.08;
+        state.latentBounds = {
+          minX: minX - padX,
+          maxX: maxX + padX,
+          minY: minY - padY,
+          maxY: maxY + padY,
+        };
+
+        renderLegend();
+        drawLatentPlot();
+        $('latentInfo').textContent = `Showing ${embeddings.length} embedded test digits.`;
+        setStatus('Embeddings ready. Click inside the plot to decode from any 2D latent point.');
+      } catch (err) {
+        log(`Embedding failed: ${err.stack || err}`);
+        setStatus('Could not compute embeddings. Check the debug log.');
+      } finally {
+        $('embedBtn').disabled = false;
+      }
+    }
+
+    function renderLegend() {
+      const legend = $('legend');
+      legend.innerHTML = '';
+      for (let i = 0; i < 10; i++) {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        item.innerHTML = `<span class="swatch" style="background:${colours[i]}"></span> ${i}`;
+        legend.appendChild(item);
+      }
+    }
+
+    function drawPlaceholder(canvas, text) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '18px Arial';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    }
+
+    function drawLatentPlot() {
+      if (!state.embeddings || !state.latentBounds) return;
+      const ctx = latentCtx;
+      const W = latentCanvas.width;
+      const H = latentCanvas.height;
+      const m = 50;
+      const pointRadius = parseInt($('pointSize').value, 10);
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 10; i++) {
+        const x = m + i * (W - 2 * m) / 10;
+        const y = m + i * (H - 2 * m) / 10;
+        ctx.beginPath(); ctx.moveTo(x, m); ctx.lineTo(x, H - m); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(m, y); ctx.lineTo(W - m, y); ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#374151';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(m, H - m); ctx.lineTo(W - m, H - m); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(m, H - m); ctx.lineTo(m, m); ctx.stroke();
+
+      ctx.fillStyle = '#374151';
+      ctx.font = '16px Arial';
+      ctx.fillText('Latent dimension 1', W / 2 - 40, H - 12);
+      ctx.save();
+      ctx.translate(18, H / 2 + 40);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText('Latent dimension 2', 0, 0);
+      ctx.restore();
+
+      for (let i = 0; i < state.embeddings.length; i++) {
+        const [x, y] = state.embeddings[i];
+        const sx = latentToScreenX(x);
+        const sy = latentToScreenY(y);
+        ctx.fillStyle = colours[state.embeddingLabels[i]];
+        ctx.globalAlpha = 0.65;
+        ctx.beginPath();
+        ctx.arc(sx, sy, pointRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      if (state.selectedLatent) {
+        const sx = latentToScreenX(state.selectedLatent[0]);
+        const sy = latentToScreenY(state.selectedLatent[1]);
+        ctx.strokeStyle = '#111827';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - 11, sy); ctx.lineTo(sx + 11, sy);
+        ctx.moveTo(sx, sy - 11); ctx.lineTo(sx, sy + 11);
+        ctx.stroke();
+      }
+    }
+
+    function latentToScreenX(x) {
+      const W = latentCanvas.width, m = 50;
+      const {minX, maxX} = state.latentBounds;
+      return m + (x - minX) / (maxX - minX) * (W - 2 * m);
+    }
+
+    function latentToScreenY(y) {
+      const H = latentCanvas.height, m = 50;
+      const {minY, maxY} = state.latentBounds;
+      return H - m - (y - minY) / (maxY - minY) * (H - 2 * m);
+    }
+
+    function screenToLatent(x, y) {
+      const rect = latentCanvas.getBoundingClientRect();
+      const px = (x - rect.left) * (latentCanvas.width / rect.width);
+      const py = (y - rect.top) * (latentCanvas.height / rect.height);
+      const W = latentCanvas.width, H = latentCanvas.height, m = 50;
+      const {minX, maxX, minY, maxY} = state.latentBounds;
+      const latentX = minX + ((px - m) / (W - 2 * m)) * (maxX - minX);
+      const latentY = minY + (((H - m) - py) / (H - 2 * m)) * (maxY - minY);
+      return [latentX, latentY];
+    }
+
+    function drawImageOnCanvas(flattened, canvas, denormalise = true) {
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.createImageData(IMG_W, IMG_H);
+      let values = flattened;
+
+      if (denormalise && state.globalMean) {
+        const meanVals = state.globalMean.dataSync();
+        values = flattened.map((v, i) => Math.max(0, Math.min(1, v + meanVals[i])));
+      }
+
+      for (let i = 0; i < IMAGE_SIZE; i++) {
+        const val = Math.max(0, Math.min(1, values[i]));
+        const c = Math.round(val * 255);
+        imgData.data[i * 4 + 0] = c;
+        imgData.data[i * 4 + 1] = c;
+        imgData.data[i * 4 + 2] = c;
+        imgData.data[i * 4 + 3] = 255;
+      }
+
+      const off = document.createElement('canvas');
+      off.width = IMG_W;
+      off.height = IMG_H;
+      const offCtx = off.getContext('2d');
+      offCtx.putImageData(imgData, 0, 0);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+    }
+
+    async function decodeLatentPoint(latentPoint, updateNearest = true) {
+      if (!state.decoder) return;
+      state.selectedLatent = latentPoint;
+      drawLatentPlot();
+      $('coordMetric').textContent = `(${latentPoint[0].toFixed(2)}, ${latentPoint[1].toFixed(2)})`;
+
+      const z = tf.tensor2d([latentPoint], [1, 2]);
+      const out = state.decoder.predict(z);
+      const arr = (await out.array())[0];
+      z.dispose();
+      out.dispose();
+
+      drawImageOnCanvas(arr, digitCanvas, true);
+      $('generatedLabel').innerHTML = `Decoded from latent point <span class="kbd">(${latentPoint[0].toFixed(2)}, ${latentPoint[1].toFixed(2)})</span>`;
+
+      if (updateNearest && state.embeddings) {
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < state.embeddings.length; i++) {
+          const dx = state.embeddings[i][0] - latentPoint[0];
+          const dy = state.embeddings[i][1] - latentPoint[1];
+          const d = dx * dx + dy * dy;
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+        state.selectedIndex = bestIdx;
+        drawImageOnCanvas(state.embeddingImages[bestIdx], nearestCanvas, true);
+        $('nearestLabel').innerHTML = `Nearest test digit: label <span class="kbd">${state.embeddingLabels[bestIdx]}</span>, distance <span class="kbd">${Math.sqrt(bestDist).toFixed(2)}</span>`;
+      }
+    }
+
+    async function generateRandomSample() {
+      if (!state.latentBounds) {
+        setStatus('Compute embeddings first so a sensible latent range is available.');
+        return;
+      }
+      const {minX, maxX, minY, maxY} = state.latentBounds;
+      const x = minX + Math.random() * (maxX - minX);
+      const y = minY + Math.random() * (maxY - minY);
+      await decodeLatentPoint([x, y], true);
+      setStatus('Generated a sample from a random latent point within the observed embedding range.');
+    }
+
+    async function generatePerturbedNeighbour() {
+      if (!state.embeddings || !state.decoder) {
+        setStatus('You need embeddings before generating a perturbed sample.');
+        return;
+      }
+      const idx = Math.floor(Math.random() * state.embeddings.length);
+      const scale = parseFloat(noiseScaleEl.value);
+      const base = state.embeddings[idx];
+      const point = [base[0] + randn() * scale, base[1] + randn() * scale];
+      await decodeLatentPoint(point, true);
+      setStatus('Generated a sample by perturbing an embedded test point.');
+    }
+
+    function randn() {
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    latentCanvas.addEventListener('click', async (ev) => {
+      if (!state.latentBounds || !state.decoder) return;
+      const point = screenToLatent(ev.clientX, ev.clientY);
+      await decodeLatentPoint(point, true);
+      setStatus('Decoded the user-selected latent point.');
+    });
+
+    noiseScaleEl.addEventListener('input', () => {
+      $('noiseLabel').textContent = parseFloat(noiseScaleEl.value).toFixed(2);
+    });
+
+    $('loadBtn').addEventListener('click', loadData);
+    $('trainBtn').addEventListener('click', trainModel);
+    $('embedBtn').addEventListener('click', computeEmbeddings);
+    $('sampleBtn').addEventListener('click', async () => {
+      if (!state.embeddings) {
+        await generateRandomSample();
+      } else {
+        await generatePerturbedNeighbour();
+      }
+    });
+
+    drawPlaceholder(latentCanvas, 'Latent plot will appear here after embedding.');
+    drawPlaceholder(digitCanvas, 'Generated');
+    drawPlaceholder(nearestCanvas, 'Nearest');
+    $('noiseLabel').textContent = parseFloat(noiseScaleEl.value).toFixed(2);
+    log('Demo initialised.');
+  </script>
+</body>
+</html>
