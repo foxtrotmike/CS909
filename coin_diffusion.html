@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>1D Diffusion Demo with TensorFlow.js</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --border: #dbe3ef;
+      --shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.35;
+    }
+    .wrap {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    h1, h2, h3 { margin: 0 0 10px 0; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 20px; margin-top: 8px; }
+    p { margin: 8px 0; }
+    .lead { color: var(--muted); max-width: 1100px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .controls {
+      display: grid;
+      gap: 12px;
+      position: sticky;
+      top: 12px;
+    }
+    .control label {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    input[type="range"], input[type="number"] {
+      width: 100%;
+    }
+    input[type="number"] {
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: white;
+    }
+    .row2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 0;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button.secondary { background: #475569; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fbfdff;
+    }
+    .stat .k { color: var(--muted); font-size: 12px; }
+    .stat .v { font-size: 24px; font-weight: bold; margin-top: 6px; }
+    .mainGrid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    canvas {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: white;
+    }
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .streams {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .streamBox {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fbfdff;
+      min-height: 160px;
+    }
+    .log {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .footerNote { color: var(--muted); font-size: 12px; }
+    @media (max-width: 1150px) {
+      .grid, .two, .row2, .stats, .streams { grid-template-columns: 1fr; }
+      .controls { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>1D Diffusion Demo</h1>
+    <p class="lead">
+      Heads are values near <b>+0.75</b> and tails are values near <b>-0.75</b>, both with a little Gaussian variation. The forward process gradually adds noise. The reverse model learns to predict that noise so it can denoise Gaussian noise back into the target distribution. In this version, the generated distribution is refreshed live during training so you can see it evolve.
+    </p>
+	<p>
+	(c) Fayyaz Minhas.
+	</p>
+	
+
+    <div class="grid">
+      <div class="controls">
+        <div class="card">
+          <h2>Controls</h2>
+
+          <div class="control">
+            <label>
+              <span>Probability of heads</span>
+              <span id="pHeadsVal">0.30</span>
+            </label>
+            <input id="pHeads" type="range" min="0.02" max="0.98" step="0.01" value="0.30" />
+            <div class="small">This defines the target data distribution used for training.</div>
+          </div>
+
+          <div class="row2">
+            <div class="control">
+              <label><span>Training samples</span></label>
+              <input id="trainN" type="number" min="500" max="50000" step="500" value="12000" />
+            </div>
+            <div class="control">
+              <label><span>Generated samples</span></label>
+              <input id="genN" type="number" min="500" max="30000" step="500" value="5000" />
+            </div>
+          </div>
+
+          <div class="row2">
+            <div class="control">
+              <label><span>Timesteps T</span></label>
+              <input id="timesteps" type="number" min="10" max="100" step="1" value="50" />
+            </div>
+            <div class="control">
+              <label><span>Epochs</span></label>
+              <input id="epochs" type="number" min="1" max="300" step="1" value="60" />
+            </div>
+          </div>
+
+          <div class="row2">
+            <div class="control">
+              <label><span>Batch size</span></label>
+              <input id="batchSize" type="number" min="64" max="4096" step="64" value="512" />
+            </div>
+            <div class="control">
+              <label><span>Learning rate</span></label>
+              <input id="lr" type="number" min="0.00001" max="0.01" step="0.00001" value="0.001" />
+            </div>
+          </div>
+
+          <div class="row2">
+            <div class="control">
+              <label><span>Live refresh every N epochs</span></label>
+              <input id="refreshEvery" type="number" min="1" max="50" step="1" value="5" />
+            </div>
+            <div class="control">
+              <label><span>Reverse snapshots</span></label>
+              <input id="numSnapshots" type="number" min="3" max="12" step="1" value="6" />
+            </div>
+          </div>
+
+          <div class="row2">
+            <div class="control">
+              <label><span>Stream length</span></label>
+              <input id="streamLen" type="number" min="10" max="200" step="5" value="40" />
+            </div>
+            <div class="control">
+              <label><span>Number of streams</span></label>
+              <input id="numStreams" type="number" min="2" max="20" step="1" value="6" />
+            </div>
+          </div>
+
+          <div class="buttons" style="margin-top:12px;">
+            <button id="trainBtn">Train diffusion model</button>
+            <button id="regenBtn" class="secondary">Regenerate from current model</button>
+            <button id="resetBtn" class="secondary">Reset model</button>
+          </div>
+
+          <div class="small" style="margin-top:10px;">
+            The blue target histogram stays fixed for the chosen dataset. The red generated curve now updates during training, so you can watch the current model improve.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Training status</h2>
+          <div class="stats">
+            <div class="stat"><div class="k">Epoch</div><div class="v" id="epochStat">0</div></div>
+            <div class="stat"><div class="k">Loss</div><div class="v" id="lossStat">-</div></div>
+            <div class="stat"><div class="k">Target P(H)</div><div class="v" id="targetStat">0.30</div></div>
+            <div class="stat"><div class="k">Generated P(H)</div><div class="v" id="genStat">-</div></div>
+          </div>
+          <div class="footerNote" style="margin-top:10px;">
+            Heads are counted as values greater than 0. At the end, thresholding the generated values gives H/T streams.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Debug log</h2>
+          <div id="log" class="log"></div>
+        </div>
+      </div>
+
+      <div class="mainGrid">
+        <div class="card">
+          <h2>Target distribution versus generated distribution</h2>
+          <p class="small">Filled bars show the fixed target data distribution. The red outline shows the current generated distribution from the current model parameters.</p>
+          <canvas id="targetCanvas" width="980" height="340"></canvas>
+        </div>
+
+        <div class="two">
+          <div class="card">
+            <h2>Forward distributions across timesteps</h2>
+            <p class="small">These show how the fixed forward process gradually turns the target distribution into noise.</p>
+            <canvas id="forwardCanvas" width="980" height="540"></canvas>
+          </div>
+          <div class="card">
+            <h2>Reverse distributions across timesteps</h2>
+            <p class="small">These snapshots are regenerated from the current model, so they improve over training as the denoiser gets better.</p>
+            <canvas id="reverseCanvas" width="980" height="540"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Generated streams</h2>
+          <p class="small">The current generated values are thresholded at 0 into H and T. These refresh during training checkpoints and at the end.</p>
+          <div class="streams">
+            <div class="streamBox">
+              <b>Sampled streams</b>
+              <div id="streamsText" style="margin-top:8px;"></div>
+            </div>
+            <div class="streamBox">
+              <b>First few generated scalar values</b>
+              <div id="valuesText" style="margin-top:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let model = null;
+    let optimizer = null;
+    let cached = null;
+    let isTraining = false;
+    let scheduleTensors = null;
+
+    const dom = {
+      pHeads: document.getElementById('pHeads'),
+      pHeadsVal: document.getElementById('pHeadsVal'),
+      trainN: document.getElementById('trainN'),
+      genN: document.getElementById('genN'),
+      timesteps: document.getElementById('timesteps'),
+      epochs: document.getElementById('epochs'),
+      batchSize: document.getElementById('batchSize'),
+      lr: document.getElementById('lr'),
+      refreshEvery: document.getElementById('refreshEvery'),
+      numSnapshots: document.getElementById('numSnapshots'),
+      streamLen: document.getElementById('streamLen'),
+      numStreams: document.getElementById('numStreams'),
+      trainBtn: document.getElementById('trainBtn'),
+      regenBtn: document.getElementById('regenBtn'),
+      resetBtn: document.getElementById('resetBtn'),
+      epochStat: document.getElementById('epochStat'),
+      lossStat: document.getElementById('lossStat'),
+      targetStat: document.getElementById('targetStat'),
+      genStat: document.getElementById('genStat'),
+      log: document.getElementById('log'),
+      streamsText: document.getElementById('streamsText'),
+      valuesText: document.getElementById('valuesText'),
+      targetCanvas: document.getElementById('targetCanvas'),
+      forwardCanvas: document.getElementById('forwardCanvas'),
+      reverseCanvas: document.getElementById('reverseCanvas')
+    };
+
+    function log(msg) {
+      const stamp = new Date().toLocaleTimeString();
+      dom.log.textContent += `[${stamp}] ${msg}\n`;
+      dom.log.scrollTop = dom.log.scrollHeight;
+      console.log(msg);
+    }
+
+    function randn() {
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    function sampleData(n, pHeads) {
+      const arr = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const isHead = Math.random() < pHeads;
+        const mu = isHead ? 0.75 : -0.75;
+        arr[i] = mu + 0.05 * randn();
+      }
+      return arr;
+    }
+
+    function disposeScheduleTensors() {
+      if (!scheduleTensors) return;
+      Object.values(scheduleTensors).forEach(t => t.dispose && t.dispose());
+      scheduleTensors = null;
+    }
+
+    function makeSchedule(T) {
+      const beta = new Float32Array(T);
+      const alpha = new Float32Array(T);
+      const alphaBar = new Float32Array(T);
+      const sqrtAlphaBar = new Float32Array(T);
+      const sqrtOneMinusAlphaBar = new Float32Array(T);
+      const sigma = new Float32Array(T);
+
+      for (let t = 0; t < T; t++) {
+        beta[t] = 1e-4 + (0.02 - 1e-4) * (t / Math.max(1, T - 1));
+        alpha[t] = 1 - beta[t];
+        alphaBar[t] = (t === 0 ? alpha[t] : alphaBar[t - 1] * alpha[t]);
+        sqrtAlphaBar[t] = Math.sqrt(alphaBar[t]);
+        sqrtOneMinusAlphaBar[t] = Math.sqrt(1 - alphaBar[t]);
+        sigma[t] = Math.sqrt(beta[t]);
+      }
+
+      disposeScheduleTensors();
+      scheduleTensors = {
+        sqrtAlphaBar: tf.tensor1d(sqrtAlphaBar),
+        sqrtOneMinusAlphaBar: tf.tensor1d(sqrtOneMinusAlphaBar)
+      };
+
+      return { beta, alpha, alphaBar, sqrtAlphaBar, sqrtOneMinusAlphaBar, sigma };
+    }
+
+    function ensureModel() {
+      if (model) return;
+      model = tf.sequential();
+      model.add(tf.layers.dense({ inputShape: [2], units: 128, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 1 }));
+      optimizer = tf.train.adam(parseFloat(dom.lr.value));
+      log('Created fresh diffusion model.');
+    }
+
+    function resetModel() {
+      if (model) model.dispose();
+      model = null;
+      optimizer = null;
+      cached = null;
+      disposeScheduleTensors();
+      dom.epochStat.textContent = '0';
+      dom.lossStat.textContent = '-';
+      dom.genStat.textContent = '-';
+      clearCanvas(dom.targetCanvas);
+      clearCanvas(dom.forwardCanvas);
+      clearCanvas(dom.reverseCanvas);
+      dom.streamsText.textContent = '';
+      dom.valuesText.textContent = '';
+      log('Model and cached results reset.');
+      initPreview();
+    }
+
+    function getSelectedSteps(T) {
+      const count = parseInt(dom.numSnapshots.value, 10);
+      const steps = [];
+      for (let i = 0; i < count; i++) {
+        steps.push(Math.min(T - 1, Math.round(i * (T - 1) / Math.max(1, count - 1))));
+      }
+      return [...new Set(steps)];
+    }
+
+    function forwardSnapshots(dataArray, schedule) {
+      const steps = getSelectedSteps(schedule.alpha.length);
+      const out = [];
+      for (const t of steps) {
+        const vals = new Float32Array(dataArray.length);
+        const sa = schedule.sqrtAlphaBar[t];
+        const so = schedule.sqrtOneMinusAlphaBar[t];
+        for (let i = 0; i < dataArray.length; i++) {
+          vals[i] = sa * dataArray[i] + so * randn();
+        }
+        out.push({ t, values: vals });
+      }
+      return out;
+    }
+
+    async function trainModel() {
+      if (isTraining) return;
+      isTraining = true;
+      dom.trainBtn.disabled = true;
+      dom.regenBtn.disabled = true;
+      dom.resetBtn.disabled = true;
+
+      try {
+        const pHeads = parseFloat(dom.pHeads.value);
+        const trainN = parseInt(dom.trainN.value, 10);
+        const T = parseInt(dom.timesteps.value, 10);
+        const epochs = parseInt(dom.epochs.value, 10);
+        const batchSize = parseInt(dom.batchSize.value, 10);
+        const lr = parseFloat(dom.lr.value);
+        const refreshEvery = parseInt(dom.refreshEvery.value, 10);
+
+        dom.targetStat.textContent = pHeads.toFixed(2);
+        ensureModel();
+        optimizer = tf.train.adam(lr);
+
+        log(`Preparing training data with P(H)=${pHeads.toFixed(2)}, N=${trainN}, T=${T}.`);
+        const dataArray = sampleData(trainN, pHeads);
+        const schedule = makeSchedule(T);
+        const trainX = tf.tensor2d(dataArray, [trainN, 1], 'float32');
+        cached = { dataArray, schedule, pHeads };
+
+        drawForward(forwardSnapshots(dataArray, schedule));
+        drawTargetVsGenerated(dataArray, null, null, 'No generated samples yet.');
+        dom.streamsText.textContent = 'Training started. Live generated streams will appear after the first refresh checkpoint.';
+        dom.valuesText.textContent = 'Waiting for live generated samples...';
+
+        const numBatches = Math.ceil(trainN / batchSize);
+
+        for (let epoch = 0; epoch < epochs; epoch++) {
+          let epochLoss = 0;
+
+          for (let b = 0; b < numBatches; b++) {
+            const start = b * batchSize;
+            const size = Math.min(batchSize, trainN - start);
+            const tIdxArr = new Int32Array(size);
+            for (let i = 0; i < size; i++) tIdxArr[i] = Math.floor(Math.random() * T);
+
+            const lossTensor = optimizer.minimize(() => tf.tidy(() => {
+              const batchX = trainX.slice([start, 0], [size, 1]);
+              const tIdx = tf.tensor1d(tIdxArr, 'int32');
+              const noise = tf.randomNormal([size, 1]);
+              const sab = tf.gather(scheduleTensors.sqrtAlphaBar, tIdx).reshape([size, 1]);
+              const somab = tf.gather(scheduleTensors.sqrtOneMinusAlphaBar, tIdx).reshape([size, 1]);
+              const xt = batchX.mul(sab).add(noise.mul(somab));
+              const tNorm = tIdx.toFloat().div(Math.max(1, T - 1)).sub(0.5).reshape([size, 1]);
+              const inp = tf.concat([xt, tNorm], 1);
+              const pred = model.apply(inp, { training: true });
+              return tf.losses.meanSquaredError(noise, pred).mean();
+            }), true);
+
+            const lossVal = (await lossTensor.data())[0];
+            epochLoss += lossVal;
+            lossTensor.dispose();
+
+            if ((b + 1) % Math.max(1, Math.floor(numBatches / 4)) === 0) {
+              await tf.nextFrame();
+            }
+          }
+
+          const meanLoss = epochLoss / numBatches;
+          dom.epochStat.textContent = String(epoch + 1);
+          dom.lossStat.textContent = meanLoss.toFixed(4);
+          log(`Epoch ${epoch + 1}/${epochs} complete. Mean loss=${meanLoss.toFixed(6)}`);
+
+          const shouldRefresh = ((epoch + 1) % refreshEvery === 0) || (epoch === epochs - 1);
+          if (shouldRefresh) {
+            log(`Refreshing generated distribution at epoch ${epoch + 1}.`);
+            await regenerate(false, `Live generated distribution at epoch ${epoch + 1}`);
+          }
+          await tf.nextFrame();
+        }
+
+        trainX.dispose();
+        log('Training complete. Final generation finished.');
+      } catch (err) {
+        log('ERROR during training: ' + (err?.stack || err));
+      } finally {
+        isTraining = false;
+        dom.trainBtn.disabled = false;
+        dom.regenBtn.disabled = false;
+        dom.resetBtn.disabled = false;
+      }
+    }
+
+    async function sampleReverse(n, schedule) {
+      const T = schedule.alpha.length;
+      const selected = getSelectedSteps(T);
+      const stepSet = new Set(selected);
+      const snapshots = [];
+      let x = tf.randomNormal([n, 1]);
+
+      for (let t = T - 1; t >= 0; t--) {
+        const next = tf.tidy(() => {
+          const tNorm = tf.fill([n, 1], t / Math.max(1, T - 1) - 0.5);
+          const inp = tf.concat([x, tNorm], 1);
+          const eps = model.predict(inp);
+          const coeff1 = 1 / Math.sqrt(schedule.alpha[t]);
+          const coeff2 = (1 - schedule.alpha[t]) / Math.sqrt(1 - schedule.alphaBar[t]);
+          const z = (t === 0) ? tf.zerosLike(x) : tf.randomNormal([n, 1]);
+          return x.sub(eps.mul(coeff2)).mul(coeff1).add(z.mul(schedule.sigma[t]));
+        });
+
+        x.dispose();
+        x = next;
+
+        if (stepSet.has(t)) {
+          const vals = new Float32Array(await x.data());
+          snapshots.push({ t, values: vals });
+          await tf.nextFrame();
+        }
+      }
+
+      snapshots.sort((a, b) => a.t - b.t);
+      const finalValues = new Float32Array(await x.data());
+      x.dispose();
+      return { finalValues, snapshots };
+    }
+
+    async function regenerate(manual = true, subtitle = 'Current generated distribution') {
+      try {
+        if (!model || !cached) {
+          log('No trained model available yet. Train the model first.');
+          return;
+        }
+        const genN = parseInt(dom.genN.value, 10);
+        const { dataArray, schedule, pHeads } = cached;
+        const result = await sampleReverse(genN, schedule);
+
+        const pGen = computeProbHeads(result.finalValues);
+        dom.genStat.textContent = pGen.toFixed(2);
+        drawTargetVsGenerated(dataArray, result.finalValues, pGen, subtitle);
+        drawReverse(result.snapshots);
+        renderStreams(result.finalValues, pHeads, pGen);
+        log(`${manual ? 'Manual' : 'Automatic'} generation of ${genN} samples complete. Estimated generated P(H)=${pGen.toFixed(4)}.`);
+      } catch (err) {
+        log('ERROR during regeneration: ' + (err?.stack || err));
+      }
+    }
+
+    function computeProbHeads(values) {
+      let heads = 0;
+      for (let i = 0; i < values.length; i++) if (values[i] > 0) heads++;
+      return heads / values.length;
+    }
+
+    function makeHistogram(values, bins = 40, minX = -1.6, maxX = 1.6) {
+      const hist = new Float32Array(bins);
+      const w = (maxX - minX) / bins;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        const idx = Math.floor((v - minX) / w);
+        if (idx >= 0 && idx < bins) hist[idx] += 1;
+      }
+      let max = 0;
+      for (let i = 0; i < bins; i++) max = Math.max(max, hist[i]);
+      return { hist, bins, minX, maxX, maxCount: max, binWidth: w };
+    }
+
+    function clearCanvas(canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawAxes(ctx, x, y, w, h, labelX = 'x', labelY = 'count') {
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x + w, y + h);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + h);
+      ctx.stroke();
+      ctx.fillStyle = '#475569';
+      ctx.font = '12px Arial';
+      ctx.fillText(labelX, x + w - 10, y + h + 18);
+      ctx.save();
+      ctx.translate(x - 28, y + 30);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(labelY, 0, 0);
+      ctx.restore();
+    }
+
+    function drawHistogram(ctx, histObj, x, y, w, h, style = {}) {
+      const fill = style.fill || 'rgba(96, 165, 250, 0.55)';
+      const stroke = style.stroke || '#1d4ed8';
+      const lineOnly = !!style.lineOnly;
+      const maxCount = histObj.maxCount || 1;
+      const bw = w / histObj.bins;
+
+      if (lineOnly) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < histObj.bins; i++) {
+          const px = x + i * bw + bw * 0.5;
+          const py = y + h - (histObj.hist[i] / maxCount) * h;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = fill;
+        ctx.strokeStyle = stroke;
+        for (let i = 0; i < histObj.bins; i++) {
+          const bh = (histObj.hist[i] / maxCount) * h;
+          ctx.fillRect(x + i * bw, y + h - bh, Math.max(1, bw - 1), bh);
+        }
+      }
+    }
+
+    function drawTargetVsGenerated(targetValues, genValues = null, pGen = null, subtitle = '') {
+      const canvas = dom.targetCanvas;
+      clearCanvas(canvas);
+      const ctx = canvas.getContext('2d');
+      const pad = { l: 52, r: 18, t: 24, b: 40 };
+      const x = pad.l, y = pad.t, w = canvas.width - pad.l - pad.r, h = canvas.height - pad.t - pad.b;
+
+      const h1 = makeHistogram(targetValues, 48);
+      const h2 = genValues ? makeHistogram(genValues, 48) : null;
+      const maxCount = h2 ? Math.max(h1.maxCount, h2.maxCount) : h1.maxCount;
+      h1.maxCount = maxCount;
+      if (h2) h2.maxCount = maxCount;
+
+      drawAxes(ctx, x, y, w, h, 'value', 'count');
+      drawHistogram(ctx, h1, x, y, w, h, { fill: 'rgba(125, 211, 252, 0.65)', stroke: '#0284c7' });
+      if (h2) drawHistogram(ctx, h2, x, y, w, h, { lineOnly: true, stroke: '#dc2626' });
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '13px Arial';
+      ctx.fillText('Target distribution', x + 10, y + 16);
+      ctx.fillStyle = 'rgba(125, 211, 252, 0.65)';
+      ctx.fillRect(x + 122, y + 6, 18, 12);
+      ctx.fillStyle = '#111827';
+      if (h2) {
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + 230, y + 12);
+        ctx.lineTo(x + 248, y + 12);
+        ctx.stroke();
+        ctx.fillText('Generated distribution', x + 255, y + 16);
+      } else {
+        ctx.fillText('No generated distribution yet', x + 255, y + 16);
+      }
+
+      if (subtitle) {
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(subtitle, x + 10, y + 34);
+      }
+      if (pGen !== null) {
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillText(`Generated P(H) = ${pGen.toFixed(3)}`, x + w - 150, y + 16);
+      }
+
+      for (const v of [-1.0, -0.75, 0, 0.75, 1.0]) {
+        const px = x + ((v - h1.minX) / (h1.maxX - h1.minX)) * w;
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.beginPath();
+        ctx.moveTo(px, y);
+        ctx.lineTo(px, y + h);
+        ctx.stroke();
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(v.toFixed(2), px - 14, y + h + 18);
+      }
+    }
+
+    function drawPanelGrid(canvas, snapshots, titlePrefix) {
+      clearCanvas(canvas);
+      const ctx = canvas.getContext('2d');
+      const cols = 3;
+      const rows = Math.ceil(snapshots.length / cols);
+      const outer = 14;
+      const gap = 12;
+      const cellW = (canvas.width - outer * 2 - gap * (cols - 1)) / cols;
+      const cellH = (canvas.height - outer * 2 - gap * (rows - 1)) / rows;
+
+      snapshots.forEach((snap, i) => {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const x = outer + c * (cellW + gap);
+        const y = outer + r * (cellH + gap);
+
+        ctx.strokeStyle = '#dbe3ef';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, cellW, cellH);
+        ctx.fillStyle = '#111827';
+        ctx.font = '13px Arial';
+        ctx.fillText(`${titlePrefix} t=${snap.t}`, x + 10, y + 18);
+
+        const plotX = x + 38;
+        const plotY = y + 28;
+        const plotW = cellW - 50;
+        const plotH = cellH - 44;
+        drawAxes(ctx, plotX, plotY, plotW, plotH, 'x', 'count');
+
+        const hist = makeHistogram(snap.values, 32);
+        drawHistogram(ctx, hist, plotX, plotY, plotW, plotH, {
+          fill: titlePrefix === 'Forward' ? 'rgba(59, 130, 246, 0.55)' : 'rgba(248, 113, 113, 0.45)',
+          stroke: titlePrefix === 'Forward' ? '#2563eb' : '#dc2626'
+        });
+      });
+    }
+
+    function drawForward(snapshots) {
+      drawPanelGrid(dom.forwardCanvas, snapshots, 'Forward');
+    }
+
+    function drawReverse(snapshots) {
+      drawPanelGrid(dom.reverseCanvas, snapshots, 'Reverse');
+    }
+
+    function renderStreams(values, pTarget, pGen) {
+      const streamLen = parseInt(dom.streamLen.value, 10);
+      const numStreams = parseInt(dom.numStreams.value, 10);
+      const totalNeeded = Math.min(values.length, streamLen * numStreams);
+      const chars = [];
+      const raw = [];
+      for (let i = 0; i < totalNeeded; i++) {
+        chars.push(values[i] > 0 ? 'H' : 'T');
+        raw.push(values[i].toFixed(3));
+      }
+
+      const lines = [];
+      const valLines = [];
+      for (let s = 0; s < numStreams; s++) {
+        const a = s * streamLen;
+        const b = Math.min(a + streamLen, totalNeeded);
+        if (a >= b) break;
+        lines.push(`Stream ${s + 1}: ${chars.slice(a, b).join('')}`);
+        valLines.push(`Vals ${s + 1}: ${raw.slice(a, Math.min(a + 12, b)).join(', ')}`);
+      }
+
+      dom.streamsText.textContent = lines.join('\n');
+      dom.valuesText.textContent = [
+        `Target P(H) = ${pTarget.toFixed(3)}`,
+        `Generated P(H) = ${pGen.toFixed(3)}`,
+        '',
+        ...valLines
+      ].join('\n');
+    }
+
+    function initPreview() {
+      const pHeads = parseFloat(dom.pHeads.value);
+      dom.pHeadsVal.textContent = pHeads.toFixed(2);
+      dom.targetStat.textContent = pHeads.toFixed(2);
+      const data = sampleData(6000, pHeads);
+      const schedule = makeSchedule(parseInt(dom.timesteps.value, 10));
+      drawForward(forwardSnapshots(data, schedule));
+      drawTargetVsGenerated(data, null, null, 'Target preview before training.');
+      clearCanvas(dom.reverseCanvas);
+      dom.streamsText.textContent = 'Train the model to see live generated H/T streams.';
+      dom.valuesText.textContent = 'Generated scalar values will appear here once live refresh begins.';
+      log('Preview initialised.');
+    }
+
+    dom.pHeads.addEventListener('input', () => {
+      dom.pHeadsVal.textContent = parseFloat(dom.pHeads.value).toFixed(2);
+      dom.targetStat.textContent = parseFloat(dom.pHeads.value).toFixed(2);
+    });
+
+    dom.trainBtn.addEventListener('click', trainModel);
+    dom.regenBtn.addEventListener('click', () => regenerate(true, 'Manual regeneration from current model'));
+    dom.resetBtn.addEventListener('click', resetModel);
+
+    window.addEventListener('load', async () => {
+      try {
+        await tf.ready();
+        log(`TensorFlow.js backend: ${tf.getBackend()}`);
+        initPreview();
+      } catch (err) {
+        log('ERROR during initialisation: ' + (err?.stack || err));
+      }
+    });
+  </script>
+</body>
+</html>
