@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TensorFlow.js GAN Demo for Coin Flips</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent2: #34d399;
+      --warn: #f59e0b;
+      --danger: #f87171;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1, h2, h3 { margin: 0 0 10px 0; }
+    p { color: var(--muted); line-height: 1.5; }
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.25);
+    }
+    .controls .row {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: #dbeafe;
+    }
+    input[type="range"], input[type="number"] {
+      width: 100%;
+    }
+    input[type="number"] {
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+    }
+    .inline {
+      display: grid;
+      grid-template-columns: 1fr 96px;
+      gap: 10px;
+      align-items: center;
+    }
+    .btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #08111f;
+      background: #bfdbfe;
+    }
+    button.secondary { background: #a7f3d0; }
+    button.warn { background: #fde68a; }
+    button.danger { background: #fecaca; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: rgba(31, 41, 55, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .stat .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .stat .v {
+      font-size: 24px;
+      font-weight: 800;
+    }
+    .charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .chart-box {
+      background: rgba(31, 41, 55, 0.72);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    canvas {
+      width: 100%;
+      height: 280px;
+      background: #08101d;
+      border-radius: 12px;
+      display: block;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .sequence-box {
+      min-height: 120px;
+      max-height: 220px;
+      overflow: auto;
+      background: #08101d;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: #bfdbfe;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .charts, .footer-grid, .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>GAN Demo: Learning a Coin Toss Process</h1>
+    <p>
+      Set an initial probability of heads, generate a large training sequence of heads and tails,
+      and train a GAN in the browser to mimic that distribution from random noise alone.
+      The demo compares the true and generated probabilities of heads, shows training losses,
+      visualises the learned latent-to-output mapping, and prints example generated sequences.
+    </p>
+	<p>
+	(c) Fayyaz Minhas.
+	</p>
+	
+
+    <div class="grid">
+      <div class="panel controls">
+        <h2>Controls</h2>
+
+        <div class="row">
+          <label for="pHeads">Probability of heads in the true process</label>
+          <div class="inline">
+            <input id="pHeads" type="range" min="0.01" max="0.99" step="0.01" value="0.30" />
+            <input id="pHeadsNum" type="number" min="0.01" max="0.99" step="0.01" value="0.30" />
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="trainLength">Training sequence length</label>
+          <input id="trainLength" type="number" min="128" max="50000" step="128" value="2048" />
+        </div>
+
+        <div class="row">
+          <label for="epochs">Epochs</label>
+          <input id="epochs" type="number" min="10" max="5000" step="10" value="400" />
+        </div>
+
+        <div class="row">
+          <label for="batchSize">Batch size</label>
+          <input id="batchSize" type="number" min="8" max="512" step="8" value="32" />
+        </div>
+
+        <div class="row">
+          <label for="learningRate">Learning rate</label>
+          <input id="learningRate" type="number" min="0.0001" max="0.1" step="0.0001" value="0.0010" />
+        </div>
+
+        <div class="row">
+          <label for="sampleCount">Samples used to estimate generated heads probability</label>
+          <input id="sampleCount" type="number" min="100" max="100000" step="100" value="5000" />
+        </div>
+
+        <div class="btns">
+          <button id="generateDataBtn">1. Generate data</button>
+          <button id="trainBtn" class="secondary">2. Train GAN</button>
+          <button id="stopBtn" class="danger">Stop</button>
+          <button id="sampleBtn" class="warn">3. Generate examples</button>
+        </div>
+
+        <div style="margin-top:14px;">
+          <span class="pill">Real samples: 0 = tails, 1 = heads</span>
+          <span class="pill">Noise prior: z ~ N(0,1)</span>
+          <span class="pill">Generator output: probability of heads</span>
+        </div>
+
+        <h3 style="margin-top:18px;">Debug log</h3>
+        <div id="log" class="sequence-box mono small"></div>
+      </div>
+
+      <div>
+        <div class="stats">
+          <div class="stat">
+            <div class="k">Target heads probability</div>
+            <div id="targetProb" class="v">0.300</div>
+          </div>
+          <div class="stat">
+            <div class="k">Empirical heads probability</div>
+            <div id="empiricalProb" class="v">-</div>
+          </div>
+          <div class="stat">
+            <div class="k">Generated heads probability</div>
+            <div id="generatedProb" class="v">-</div>
+          </div>
+          <div class="stat">
+            <div class="k">Absolute difference</div>
+            <div id="probDiff" class="v">-</div>
+          </div>
+        </div>
+
+        <div class="charts">
+          <div class="chart-box">
+            <h3>True vs generated probability of heads</h3>
+            <canvas id="probChart" width="560" height="280"></canvas>
+          </div>
+          <div class="chart-box">
+            <h3>Training losses</h3>
+            <canvas id="lossChart" width="560" height="280"></canvas>
+          </div>
+          <div class="chart-box">
+            <h3>Learned mapping from latent noise to generator output</h3>
+            <canvas id="mappingChart" width="560" height="280"></canvas>
+          </div>
+          <div class="chart-box">
+            <h3>Training sequence preview</h3>
+            <div id="trainPreview" class="sequence-box mono"></div>
+          </div>
+        </div>
+
+        <div class="footer-grid">
+          <div class="panel">
+            <h3>Generated sequences</h3>
+            <p class="small">
+              Each line below is sampled from the trained generator by feeding independent Gaussian noise values
+              and converting the output probabilities into heads or tails.
+            </p>
+            <div id="generatedSequences" class="sequence-box mono"></div>
+          </div>
+          <div class="panel">
+            <h3>Notes</h3>
+            <div class="small">
+              <p>
+                For this Bernoulli example, a GAN is deliberately excessive. The point is to show that a generator can start from random noise and learn to imitate an unknown data source just by competing with a discriminator.
+              </p>
+              <p>
+                Because the data are binary but the generator is differentiable, the model is trained using continuous outputs in [0,1]. For display and sample generation, these outputs are converted into heads and tails by Bernoulli sampling.
+              </p>
+              <p>
+                The training process is stochastic. Running it again with the same target probability may still produce slightly different results.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const state = {
+    trainData: [],
+    generator: null,
+    discriminator: null,
+    lossesD: [],
+    lossesG: [],
+    stopRequested: false,
+    isTraining: false,
+  };
+
+  function log(msg) {
+    const box = el('log');
+    const time = new Date().toLocaleTimeString();
+    box.textContent += `[${time}] ${msg}\n`;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function clearLog() {
+    el('log').textContent = '';
+  }
+
+  function syncProbabilityInputs(fromSlider = true) {
+    if (fromSlider) {
+      el('pHeadsNum').value = Number(el('pHeads').value).toFixed(2);
+    } else {
+      let v = Number(el('pHeadsNum').value);
+      if (Number.isNaN(v)) v = 0.3;
+      v = Math.max(0.01, Math.min(0.99, v));
+      el('pHeadsNum').value = v.toFixed(2);
+      el('pHeads').value = v.toFixed(2);
+    }
+    el('targetProb').textContent = Number(el('pHeads').value).toFixed(3);
+  }
+
+  function generateCoinSequence(length, pHeads) {
+    const seq = new Array(length);
+    let heads = 0;
+    for (let i = 0; i < length; i++) {
+      const x = Math.random() < pHeads ? 1 : 0;
+      seq[i] = x;
+      heads += x;
+    }
+    return { seq, empiricalProb: heads / length };
+  }
+
+  function formatSequence(seq, lineLength = 64) {
+    const chars = seq.map(v => v === 1 ? 'H' : 'T');
+    const lines = [];
+    for (let i = 0; i < chars.length; i += lineLength) {
+      lines.push(chars.slice(i, i + lineLength).join(' '));
+    }
+    return lines.join('\n');
+  }
+
+  function createGenerator() {
+    const model = tf.sequential();
+    model.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [1] }));
+    model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
+    model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+    return model;
+  }
+
+  function createDiscriminator() {
+    const model = tf.sequential();
+    model.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [1] }));
+    model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+    model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+    return model;
+  }
+
+  function binaryCrossEntropy(yTrue, yPred) {
+    const eps = tf.scalar(1e-7);
+    const one = tf.scalar(1);
+    const yp = yPred.clipByValue(1e-7, 1 - 1e-7);
+    return tf.mean(tf.neg(tf.add(
+      tf.mul(yTrue, tf.log(yp.add(eps))),
+      tf.mul(one.sub(yTrue), tf.log(one.sub(yp).add(eps)))
+    )));
+  }
+
+  async function estimateGeneratedProbability(sampleCount) {
+    if (!state.generator) return null;
+    const probs = tf.tidy(() => {
+      const z = tf.randomNormal([sampleCount, 1]);
+      return state.generator.predict(z);
+    });
+    const probVals = await probs.data();
+    probs.dispose();
+
+    let heads = 0;
+    for (let i = 0; i < probVals.length; i++) {
+      if (Math.random() < probVals[i]) heads += 1;
+    }
+    return heads / probVals.length;
+  }
+
+  async function generateExampleSequences(numSeq = 5, seqLength = 60) {
+    if (!state.generator) {
+      log('Generator is not available yet. Train the GAN first.');
+      return;
+    }
+    const lines = [];
+    for (let s = 0; s < numSeq; s++) {
+      const probs = tf.tidy(() => {
+        const z = tf.randomNormal([seqLength, 1]);
+        return state.generator.predict(z);
+      });
+      const vals = await probs.data();
+      probs.dispose();
+      const seq = Array.from(vals, v => (Math.random() < v ? 1 : 0));
+      lines.push(`Sequence ${s + 1}: ${seq.map(v => v ? 'H' : 'T').join(' ')}`);
+    }
+    el('generatedSequences').textContent = lines.join('\n\n');
+  }
+
+  function drawAxes(ctx, width, height, margin, xLabel = '', yLabel = '') {
+    ctx.strokeStyle = '#8aa1c5';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, height - margin.bottom);
+    ctx.lineTo(width - margin.right, height - margin.bottom);
+    ctx.lineTo(width - margin.right, margin.top);
+    ctx.stroke();
+
+    ctx.fillStyle = '#dbeafe';
+    ctx.font = '12px Arial';
+    if (xLabel) ctx.fillText(xLabel, width / 2 - 30, height - 8);
+    if (yLabel) {
+      ctx.save();
+      ctx.translate(14, height / 2 + 20);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  function clearCanvas(canvasId) {
+    const c = el(canvasId);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#08101d';
+    ctx.fillRect(0, 0, c.width, c.height);
+  }
+
+  function drawProbabilityChart(trueProb, empiricalProb, generatedProb) {
+    const canvas = el('probChart');
+    const ctx = canvas.getContext('2d');
+    clearCanvas('probChart');
+    const W = canvas.width, H = canvas.height;
+    const m = { left: 50, right: 20, top: 20, bottom: 40 };
+    drawAxes(ctx, W, H, m, 'Source', 'Probability');
+
+    const bars = [
+      { label: 'Target', value: trueProb, color: '#60a5fa' },
+      { label: 'Empirical', value: empiricalProb ?? 0, color: '#34d399' },
+      { label: 'Generated', value: generatedProb ?? 0, color: '#f59e0b' }
+    ];
+
+    const plotW = W - m.left - m.right;
+    const plotH = H - m.top - m.bottom;
+    const step = plotW / bars.length;
+    const barW = Math.min(70, step * 0.45);
+
+    ctx.strokeStyle = '#334155';
+    ctx.fillStyle = '#9fb5d6';
+    ctx.font = '11px Arial';
+    for (let i = 0; i <= 5; i++) {
+      const yv = i / 5;
+      const y = H - m.bottom - yv * plotH;
+      ctx.beginPath();
+      ctx.moveTo(m.left, y);
+      ctx.lineTo(W - m.right, y);
+      ctx.stroke();
+      ctx.fillText((yv).toFixed(1), 16, y + 4);
+    }
+
+    bars.forEach((b, i) => {
+      const x = m.left + step * i + step / 2 - barW / 2;
+      const h = Math.max(0, Math.min(1, b.value)) * plotH;
+      const y = H - m.bottom - h;
+      ctx.fillStyle = b.color;
+      ctx.fillRect(x, y, barW, h);
+      ctx.fillStyle = '#e5e7eb';
+      ctx.fillText(b.label, x - 2, H - 16);
+      ctx.fillText((b.value ?? 0).toFixed(3), x, Math.max(14, y - 8));
+    });
+  }
+
+  function drawLossChart(lossesD, lossesG) {
+    const canvas = el('lossChart');
+    const ctx = canvas.getContext('2d');
+    clearCanvas('lossChart');
+    const W = canvas.width, H = canvas.height;
+    const m = { left: 50, right: 20, top: 20, bottom: 40 };
+    drawAxes(ctx, W, H, m, 'Epoch', 'Loss');
+
+    if (!lossesD.length && !lossesG.length) return;
+
+    const allVals = lossesD.concat(lossesG).filter(v => Number.isFinite(v));
+    const maxY = Math.max(1e-6, ...allVals);
+    const minY = 0;
+    const plotW = W - m.left - m.right;
+    const plotH = H - m.top - m.bottom;
+    const maxN = Math.max(lossesD.length, lossesG.length);
+
+    ctx.strokeStyle = '#334155';
+    ctx.fillStyle = '#9fb5d6';
+    ctx.font = '11px Arial';
+    for (let i = 0; i <= 5; i++) {
+      const frac = i / 5;
+      const y = H - m.bottom - frac * plotH;
+      ctx.beginPath();
+      ctx.moveTo(m.left, y);
+      ctx.lineTo(W - m.right, y);
+      ctx.stroke();
+      const val = minY + frac * (maxY - minY);
+      ctx.fillText(val.toFixed(2), 14, y + 4);
+    }
+
+    function drawLine(vals, color, label, yOffset) {
+      if (!vals.length) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      vals.forEach((v, i) => {
+        const x = m.left + (i / Math.max(1, maxN - 1)) * plotW;
+        const y = H - m.bottom - ((v - minY) / Math.max(1e-6, maxY - minY)) * plotH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillText(label, W - 120, 24 + yOffset);
+    }
+
+    drawLine(lossesD, '#60a5fa', 'Discriminator', 0);
+    drawLine(lossesG, '#34d399', 'Generator', 18);
+  }
+
+  async function drawMappingChart() {
+    const canvas = el('mappingChart');
+    const ctx = canvas.getContext('2d');
+    clearCanvas('mappingChart');
+    const W = canvas.width, H = canvas.height;
+    const m = { left: 50, right: 20, top: 20, bottom: 40 };
+    drawAxes(ctx, W, H, m, 'Latent noise z', 'G(z)');
+
+    if (!state.generator) return;
+
+    const n = 180;
+    const xs = [];
+    for (let i = 0; i < n; i++) xs.push(-3 + 6 * i / (n - 1));
+    const xTensor = tf.tensor2d(xs, [n, 1]);
+    const yTensor = state.generator.predict(xTensor);
+    const ys = await yTensor.data();
+    xTensor.dispose();
+    yTensor.dispose();
+
+    const plotW = W - m.left - m.right;
+    const plotH = H - m.top - m.bottom;
+
+    ctx.strokeStyle = '#334155';
+    ctx.fillStyle = '#9fb5d6';
+    ctx.font = '11px Arial';
+    for (let i = 0; i <= 6; i++) {
+      const xv = -3 + i;
+      const x = m.left + ((xv + 3) / 6) * plotW;
+      ctx.beginPath();
+      ctx.moveTo(x, H - m.bottom);
+      ctx.lineTo(x, m.top);
+      ctx.stroke();
+      ctx.fillText(xv.toFixed(0), x - 4, H - 18);
+    }
+    for (let i = 0; i <= 5; i++) {
+      const yv = i / 5;
+      const y = H - m.bottom - yv * plotH;
+      ctx.beginPath();
+      ctx.moveTo(m.left, y);
+      ctx.lineTo(W - m.right, y);
+      ctx.stroke();
+      ctx.fillText(yv.toFixed(1), 16, y + 4);
+    }
+
+    ctx.fillStyle = '#f59e0b';
+    for (let i = 0; i < n; i++) {
+      const px = m.left + ((xs[i] + 3) / 6) * plotW;
+      const py = H - m.bottom - ys[i] * plotH;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.2, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  function updateStats(targetProb, empiricalProb = null, generatedProb = null) {
+    el('targetProb').textContent = targetProb.toFixed(3);
+    el('empiricalProb').textContent = empiricalProb == null ? '-' : empiricalProb.toFixed(3);
+    el('generatedProb').textContent = generatedProb == null ? '-' : generatedProb.toFixed(3);
+    el('probDiff').textContent = (generatedProb == null || empiricalProb == null)
+      ? '-'
+      : Math.abs(generatedProb - empiricalProb).toFixed(3);
+    drawProbabilityChart(targetProb, empiricalProb, generatedProb);
+  }
+
+  async function trainGAN() {
+    if (!state.trainData.length) {
+      log('No training data found. Generate data first.');
+      return;
+    }
+    if (state.isTraining) {
+      log('Training is already running.');
+      return;
+    }
+
+    state.stopRequested = false;
+    state.isTraining = true;
+    state.lossesD = [];
+    state.lossesG = [];
+
+    try {
+      const lr = Number(el('learningRate').value);
+      const epochs = Number(el('epochs').value);
+      const batchSize = Number(el('batchSize').value);
+      const sampleCount = Number(el('sampleCount').value);
+
+      state.generator?.dispose?.();
+      state.discriminator?.dispose?.();
+      state.generator = createGenerator();
+      state.discriminator = createDiscriminator();
+      const optG = tf.train.adam(lr);
+      const optD = tf.train.adam(lr);
+
+      const trainArray = state.trainData.slice();
+      const N = trainArray.length;
+      const batchesPerEpoch = Math.max(1, Math.floor(N / batchSize));
+      const empiricalProb = trainArray.reduce((a, b) => a + b, 0) / N;
+      const targetProb = Number(el('pHeads').value);
+
+      log(`Starting training with ${epochs} epochs, batch size ${batchSize}, learning rate ${lr}.`);
+
+      for (let epoch = 0; epoch < epochs; epoch++) {
+        if (state.stopRequested) {
+          log(`Training stopped by user at epoch ${epoch}.`);
+          break;
+        }
+
+        let epochDLoss = 0;
+        let epochGLoss = 0;
+
+        tf.util.shuffle(trainArray);
+
+        for (let b = 0; b < batchesPerEpoch; b++) {
+          const start = b * batchSize;
+          const batch = trainArray.slice(start, start + batchSize);
+          if (batch.length < batchSize) continue;
+
+          const dLossTensor = optD.minimize(() => tf.tidy(() => {
+            const real = tf.tensor2d(batch, [batch.length, 1], 'float32');
+            const z = tf.randomNormal([batch.length, 1]);
+            const fake = state.generator.apply(z);
+            const allX = real.concat(fake, 0);
+            const yReal = tf.ones([batch.length, 1]);
+            const yFake = tf.zeros([batch.length, 1]);
+            const allY = yReal.concat(yFake, 0);
+            const pred = state.discriminator.apply(allX);
+            return binaryCrossEntropy(allY, pred);
+          }), true, state.discriminator.trainableWeights.map(w => w.val));
+
+          const gLossTensor = optG.minimize(() => tf.tidy(() => {
+            const z = tf.randomNormal([batch.length, 1]);
+            const fake = state.generator.apply(z);
+            const pred = state.discriminator.apply(fake);
+            const target = tf.ones([batch.length, 1]);
+            return binaryCrossEntropy(target, pred);
+          }), true, state.generator.trainableWeights.map(w => w.val));
+
+          const dLossVal = (await dLossTensor.data())[0];
+          const gLossVal = (await gLossTensor.data())[0];
+          dLossTensor.dispose();
+          gLossTensor.dispose();
+          epochDLoss += dLossVal;
+          epochGLoss += gLossVal;
+        }
+
+        epochDLoss /= batchesPerEpoch;
+        epochGLoss /= batchesPerEpoch;
+        state.lossesD.push(epochDLoss);
+        state.lossesG.push(epochGLoss);
+
+        if (epoch % 10 === 0 || epoch === epochs - 1) {
+          const genProb = await estimateGeneratedProbability(Math.min(sampleCount, 10000));
+          updateStats(targetProb, empiricalProb, genProb);
+          drawLossChart(state.lossesD, state.lossesG);
+          await drawMappingChart();
+          log(`Epoch ${epoch + 1}/${epochs} | D loss = ${epochDLoss.toFixed(4)} | G loss = ${epochGLoss.toFixed(4)} | generated heads = ${genProb.toFixed(4)}`);
+          await tf.nextFrame();
+        }
+      }
+
+      const finalGenProb = await estimateGeneratedProbability(sampleCount);
+      updateStats(targetProb, empiricalProb, finalGenProb);
+      drawLossChart(state.lossesD, state.lossesG);
+      await drawMappingChart();
+      await generateExampleSequences(5, 60);
+      log(`Training finished. Final generated heads probability: ${finalGenProb.toFixed(4)}`);
+    } catch (err) {
+      console.error(err);
+      log(`ERROR: ${err && err.stack ? err.stack : err}`);
+    } finally {
+      state.isTraining = false;
+    }
+  }
+
+  function generateData() {
+    try {
+      const pHeads = Number(el('pHeads').value);
+      const trainLength = Number(el('trainLength').value);
+      const { seq, empiricalProb } = generateCoinSequence(trainLength, pHeads);
+      state.trainData = seq;
+      el('trainPreview').textContent = formatSequence(seq.slice(0, Math.min(512, seq.length)), 32);
+      el('generatedSequences').textContent = '';
+      state.lossesD = [];
+      state.lossesG = [];
+      updateStats(pHeads, empiricalProb, null);
+      drawLossChart([], []);
+      clearCanvas('mappingChart');
+      log(`Generated ${trainLength} training tosses with target heads probability ${pHeads.toFixed(3)}. Empirical estimate: ${empiricalProb.toFixed(4)}.`);
+    } catch (err) {
+      console.error(err);
+      log(`ERROR while generating data: ${err && err.stack ? err.stack : err}`);
+    }
+  }
+
+  function setup() {
+    el('pHeads').addEventListener('input', () => syncProbabilityInputs(true));
+    el('pHeadsNum').addEventListener('input', () => syncProbabilityInputs(false));
+    el('generateDataBtn').addEventListener('click', () => generateData());
+    el('trainBtn').addEventListener('click', async () => await trainGAN());
+    el('stopBtn').addEventListener('click', () => {
+      state.stopRequested = true;
+      log('Stop requested. The current optimisation step will finish first.');
+    });
+    el('sampleBtn').addEventListener('click', async () => {
+      try {
+        await generateExampleSequences(5, 60);
+        const genProb = await estimateGeneratedProbability(Number(el('sampleCount').value));
+        const empirical = state.trainData.length ? state.trainData.reduce((a, b) => a + b, 0) / state.trainData.length : null;
+        updateStats(Number(el('pHeads').value), empirical, genProb);
+        await drawMappingChart();
+        log('Generated fresh example sequences from the current generator.');
+      } catch (err) {
+        console.error(err);
+        log(`ERROR while generating examples: ${err && err.stack ? err.stack : err}`);
+      }
+    });
+
+    syncProbabilityInputs(true);
+    clearLog();
+    clearCanvas('probChart');
+    clearCanvas('lossChart');
+    clearCanvas('mappingChart');
+    generateData();
+  }
+
+  setup();
+})();
+</script>
+</body>
+</html>
